@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -37,3 +38,20 @@ class VaccinationOut(BaseModel):
     dose_number: int
     administered_by: str
     administered_at: datetime
+
+
+class EncounterCreate(BaseModel):
+    event_id: str = Field(..., min_length=1, max_length=32)
+    child_id: str = Field(..., min_length=1, max_length=32)
+    round_id: str = Field(..., min_length=1, max_length=32)
+    device_id: str = Field(..., min_length=1, max_length=64)
+    recorded_at: datetime
+    type: Literal["enumeration", "revisit"]
+    zero_dose_answer: Optional[bool] = None
+    vaccinated_since_last: Optional[Literal["yes", "no"]] = None
+    vaccinated_elsewhere: Optional[bool] = None
+    comment: Optional[str] = None
+
+
+class EncounterOut(EncounterCreate):
+    model_config = ConfigDict(from_attributes=True)

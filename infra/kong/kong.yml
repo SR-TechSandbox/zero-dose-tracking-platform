@@ -8,6 +8,7 @@ services:
       - name: campaign-routes
         paths:
           - /api/v1/campaigns
+          - /api/v1/rounds
         strip_path: false
 
   - name: tracking-service
@@ -17,6 +18,7 @@ services:
         paths:
           - /api/v1/beneficiaries
           - /api/v1/vaccinations
+          - /api/v1/encounters
         strip_path: false
 
   - name: analytics-service

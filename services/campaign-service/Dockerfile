@@ -9,6 +9,7 @@ WORKDIR /app
 COPY services/campaign-service/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
+COPY data/baseline/rounds.json ./data/baseline/rounds.json
 COPY services/shared ./services/shared
 COPY services/campaign-service ./services/campaign-service
 
@@ -19,4 +20,4 @@ USER appuser
 
 EXPOSE 8001
 
-CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 1"]
+CMD ["sh", "-c", "alembic upgrade head && python -m app.seed && exec uvicorn app.main:app --host 0.0.0.0 --port 8001 --workers 1"]

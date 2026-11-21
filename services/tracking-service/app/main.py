@@ -7,10 +7,12 @@ from sqlalchemy.orm import Session
 from services.shared.auth import UserContext, require_roles
 
 from .database import get_db
-from .models import Beneficiary, Vaccination
+from .models import Beneficiary, Encounter, Vaccination
 from .schemas import (
     BeneficiaryCreate,
     BeneficiaryOut,
+    EncounterCreate,
+    EncounterOut,
     VaccinationCreate,
     VaccinationOut,
 )
@@ -102,3 +104,39 @@ def log_vaccination(
     db.commit()
     db.refresh(vaccination)
     return vaccination
+
+
+@app.get("/api/v1/encounters", response_model=list[EncounterOut])
+def list_encounters(
+    child_id: Optional[str] = Query(None),
+    round_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _: UserContext = Depends(require_roles("admin", "field_worker")),
+):
+    query = db.query(Encounter)
+    if child_id:
+        query = query.filter(Encounter.child_id == child_id)
+    if round_id:
+        query = query.filter(Encounter.round_id == round_id)
+    return query.order_by(Encounter.recorded_at.asc()).all()
+
+
+@app.post(
+    "/api/v1/encounters",
+    response_model=EncounterOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_encounter(
+    payload: EncounterCreate,
+    db: Session = Depends(get_db),
+    _: UserContext = Depends(require_roles("admin", "field_worker")),
+):
+    if db.get(Encounter, payload.event_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Encounter already exists"
+        )
+    encounter = Encounter(**payload.model_dump())
+    db.add(encounter)
+    db.commit()
+    db.refresh(encounter)
+    return encounter
