@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import os
 from typing import Any
 
@@ -36,15 +37,21 @@ async def _fetch_json(url: str, authorization: str) -> Any:
         return resp.json()
 
 
+async def _resolve(value: Any) -> Any:
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
+
 @app.get("/api/v1/analytics/summary")
 async def analytics_summary(
     authorization: str = Header(default=""),
     _: UserContext = Depends(require_roles("admin", "field_worker")),
 ):
     campaigns, beneficiaries, vaccinations = await asyncio.gather(
-        _fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/campaigns", authorization),
-        _fetch_json(f"{TRACKING_SERVICE_URL}/api/v1/beneficiaries", authorization),
-        _fetch_json(f"{TRACKING_SERVICE_URL}/api/v1/vaccinations", authorization),
+        _resolve(_fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/campaigns", authorization)),
+        _resolve(_fetch_json(f"{TRACKING_SERVICE_URL}/api/v1/beneficiaries", authorization)),
+        _resolve(_fetch_json(f"{TRACKING_SERVICE_URL}/api/v1/vaccinations", authorization)),
     )
 
     total_campaigns = len(campaigns)
@@ -74,9 +81,9 @@ async def district_coverage_metrics(
     _: UserContext = Depends(require_roles("admin")),
 ):
     campaigns, beneficiaries, vaccinations = await asyncio.gather(
-        _fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/campaigns", authorization),
-        _fetch_json(f"{TRACKING_SERVICE_URL}/api/v1/beneficiaries", authorization),
-        _fetch_json(f"{TRACKING_SERVICE_URL}/api/v1/vaccinations", authorization),
+        _resolve(_fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/campaigns", authorization)),
+        _resolve(_fetch_json(f"{TRACKING_SERVICE_URL}/api/v1/beneficiaries", authorization)),
+        _resolve(_fetch_json(f"{TRACKING_SERVICE_URL}/api/v1/vaccinations", authorization)),
     )
 
     if not campaigns and not beneficiaries:
@@ -131,8 +138,8 @@ async def round_transitions(
     _: UserContext = Depends(require_roles("admin", "field_worker")),
 ):
     rounds, encounters = await asyncio.gather(
-        _fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/rounds", authorization),
-        _fetch_json(f"{TRACKING_SERVICE_URL}/api/v1/encounters", authorization),
+        _resolve(_fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/rounds", authorization)),
+        _resolve(_fetch_json(f"{TRACKING_SERVICE_URL}/api/v1/encounters", authorization)),
     )
     return await asyncio.to_thread(compute_round_transitions, rounds, encounters)
 
@@ -144,10 +151,12 @@ async def child_timeline(
     _: UserContext = Depends(require_roles("admin", "field_worker")),
 ):
     rounds, encounters = await asyncio.gather(
-        _fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/rounds", authorization),
-        _fetch_json(
-            f"{TRACKING_SERVICE_URL}/api/v1/encounters?child_id={child_id}",
-            authorization,
+        _resolve(_fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/rounds", authorization)),
+        _resolve(
+            _fetch_json(
+                f"{TRACKING_SERVICE_URL}/api/v1/encounters?child_id={child_id}",
+                authorization,
+            )
         ),
     )
     if not encounters:
