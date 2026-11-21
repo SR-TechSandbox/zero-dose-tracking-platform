@@ -60,10 +60,10 @@ async def analytics_summary(
     total_vaccinations = len(vaccinations)
     unique_vaccinated = len({v["beneficiary_id"] for v in vaccinations})
     coverage_pct = (
-        round((unique_vaccinated / total_beneficiaries) * 100, 2)
-        if total_beneficiaries > 0
-        else 0.0
-    )
+            round((unique_vaccinated / total_target) * 100, 2)
+            if total_target > 0
+            else 0.0
+        )
 
     return {
         "total_campaigns": total_campaigns,
