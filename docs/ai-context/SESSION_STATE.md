@@ -2,7 +2,7 @@
 
 **Repository:** `SR-TechSandbox/zero-dose-tracking-platform`  
 **Current Phase:** Phase 3 — Frontend SPA & Keycloak PKCE Integration  
-**Active Branch:** `feat/phase-3-frontend-spa`  
+**Active Branch:** `feature/phase-3-frontend-spa`  
 **Last Updated:** 2026-11-21
 
 ## Completed

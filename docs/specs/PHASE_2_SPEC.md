@@ -1,7 +1,7 @@
 # PHASE 2 SPEC — Backend Decomposition (FastAPI Microservices)
 
 **Status:** Active  
-**Target Branch:** `feat/phase-2-backend-services`  
+**Target Branch:** `feature/service-decompose`  
 **Depends On:** Phase 1 Core Infrastructure (Green)
 
 ---
