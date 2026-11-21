@@ -3,6 +3,8 @@ import os
 from datetime import date
 from pathlib import Path
 
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
 from .database import SessionLocal
 from .models import Round
 
@@ -17,23 +19,27 @@ def seed_rounds() -> None:
         return
 
     records = json.loads(BASELINE_ROUNDS_PATH.read_text(encoding="utf-8"))
+    rows = [
+        {
+            "round_id": item["round_id"],
+            "name": item["name"],
+            "start_date": date.fromisoformat(item["start_date"]),
+            "end_date": date.fromisoformat(item["end_date"]),
+        }
+        for item in records
+    ]
+
     db = SessionLocal()
     try:
-        inserted = 0
-        for item in records:
-            exists = db.get(Round, item["round_id"])
-            if not exists:
-                db.add(
-                    Round(
-                        round_id=item["round_id"],
-                        name=item["name"],
-                        start_date=date.fromisoformat(item["start_date"]),
-                        end_date=date.fromisoformat(item["end_date"]),
-                    )
-                )
-                inserted += 1
-        db.commit()
-        print(f"Seeded {inserted} new rounds (total in file: {len(records)}).")
+        if rows:
+            stmt = pg_insert(Round).values(rows).on_conflict_do_nothing(
+                index_elements=["round_id"]
+            )
+            result = db.execute(stmt)
+            db.commit()
+            print(
+                f"Seeded {result.rowcount} new rounds (total in file: {len(rows)})."
+            )
     finally:
         db.close()
 
