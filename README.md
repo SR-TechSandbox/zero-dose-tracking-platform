@@ -8,12 +8,12 @@ A secure, containerised microservices platform for tracking zero-dose vaccinatio
 
 ```mermaid
 flowchart LR
-    User([Browser / CLI]) -->|HTTPS :443| Nginx[Nginx Edge LB<br/>TLS Termination]
+    User([Browser Running React SPA / CLI]) -->|HTTPS :443| Nginx[Nginx Edge LB<br/>TLS Termination]
 
     subgraph edge-net
-        Nginx -->|/| Frontend[React + Vite SPA<br/>Keycloak PKCE]
-        Nginx -->|/auth| Keycloak[Keycloak 26.0<br/>OIDC / JWKS]
-        Nginx -->|/api/v1| Kong[Kong OSS 3.8<br/>DB-less Gateway]
+        Nginx -->|"/ (Static Bundle)"| Frontend[zd-frontend<br/>Nginx + React Build]
+        Nginx -->|"/auth (OIDC / PKCE)"| Keycloak[Keycloak 26.0<br/>Identity Provider]
+        Nginx -->|"/api/v1/*"| Kong[Kong OSS 3.8<br/>DB-less Gateway]
     end
 
     subgraph app-net
@@ -25,9 +25,9 @@ flowchart LR
     end
 
     subgraph data-net
-        Keycloak --> PG[(PostgreSQL 18<br/>3 Isolated DBs)]
-        Campaign --> PG
-        Tracking --> PG
+        Keycloak -->|keycloak_db| PG[(PostgreSQL 18<br/>3 Isolated DBs)]
+        Campaign -->|campaign_db| PG
+        Tracking -->|tracking_db| PG
     end
 ```
 
