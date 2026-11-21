@@ -1,0 +1,106 @@
+name: Verify Phase 2 Microservices
+
+on:
+  push:
+    branches: ["main", "feat/*"]
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install -r services/campaign-service/requirements.txt
+          pip install -r services/analytics-service/requirements.txt
+
+      - name: Run pytest across all services
+        env:
+          PYTHONPATH: .
+        run: |
+          pytest services/shared/tests -v
+          pytest services/campaign-service/tests -v
+          pytest services/tracking-service/tests -v
+          pytest services/analytics-service/tests -v
+
+  e2e-full-stack:
+    needs: unit-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare env & TLS certs
+        run: |
+          cp .env.example .env
+          chmod +x infra/postgres/init-databases.sh infra/nginx/generate-certs.sh
+          ./infra/nginx/generate-certs.sh
+
+      - name: Boot full 7-container stack
+        run: docker compose --profile full up -d --build
+
+      - name: Wait for services & check RAM usage
+        run: |
+          echo "Waiting 45s for Keycloak + Alembic migrations + FastAPI services..."
+          sleep 45
+          docker compose --profile full ps
+          docker stats --no-stream
+
+      - name: Run Phase 2 E2E RBAC & Functional Flow
+        run: |
+          set -e
+
+          echo "1. Unauthenticated request must return 401..."
+          CODE=$(curl -sk -o /dev/null -w "%{http_code}" https://localhost/api/v1/campaigns)
+          test "$CODE" -eq 401
+
+          echo "2. Mint Admin & Field Worker JWTs..."
+          ADMIN_TOKEN=$(curl -sk -X POST https://localhost/auth/realms/zero-dose-realm/protocol/openid-connect/token \
+            -d "client_id=zd-cli-test" -d "username=admin.user" -d "password=AdminPass123!" -d "grant_type=password" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+          WORKER_TOKEN=$(curl -sk -X POST https://localhost/auth/realms/zero-dose-realm/protocol/openid-connect/token \
+            -d "client_id=zd-cli-test" -d "username=worker.user" -d "password=WorkerPass123!" -d "grant_type=password" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+          echo "3. Field worker creating campaign must return 403..."
+          CODE=$(curl -sk -o /dev/null -w "%{http_code}" -X POST https://localhost/api/v1/campaigns \
+            -H "Authorization: Bearer $WORKER_TOKEN" -H "Content-Type: application/json" \
+            -d '{"name":"Unauthorised Drive","district":"Mysuru","target_beneficiaries":100}')
+          test "$CODE" -eq 403
+
+          echo "4. Admin creates campaign (201)..."
+          CAMP_ID=$(curl -sk -f -X POST https://localhost/api/v1/campaigns \
+            -H "Authorization: Bearer $ADMIN_TOKEN" -H "Content-Type: application/json" \
+            -d '{"name":"Mission Indradhanush","district":"Bengaluru Urban","target_beneficiaries":500}' \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+          echo "Created campaign: $CAMP_ID"
+
+          echo "5. Field worker registers beneficiary (201)..."
+          BEN_ID=$(curl -sk -f -X POST https://localhost/api/v1/beneficiaries \
+            -H "Authorization: Bearer $WORKER_TOKEN" -H "Content-Type: application/json" \
+            -d "{\"campaign_id\":\"$CAMP_ID\",\"full_name\":\"Aarav Kumar\",\"age_months\":14,\"district\":\"Bengaluru Urban\"}" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['id'])")
+          echo "Created beneficiary: $BEN_ID"
+
+          echo "6. Field worker logs vaccination (201)..."
+          curl -sk -f -X POST https://localhost/api/v1/vaccinations \
+            -H "Authorization: Bearer $WORKER_TOKEN" -H "Content-Type: application/json" \
+            -d "{\"beneficiary_id\":\"$BEN_ID\",\"vaccine_name\":\"DTP1\",\"dose_number\":1}" > /dev/null
+
+          echo "7. Admin fetches analytics summary & district metrics..."
+          SUMMARY=$(curl -sk -f https://localhost/api/v1/analytics/summary -H "Authorization: Bearer $ADMIN_TOKEN")
+          echo "Summary: $SUMMARY"
+          echo "$SUMMARY" | python3 -c "import sys, json; d=json.load(sys.stdin); assert d['total_campaigns']>=1 and d['total_beneficiaries']>=1 and d['total_vaccinations']>=1"
+
+          METRICS=$(curl -sk -f https://localhost/api/v1/metrics/coverage -H "Authorization: Bearer $ADMIN_TOKEN")
+          echo "Metrics: $METRICS"
+
+      - name: Dump Logs on Failure
+        if: failure()
+        run: docker compose --profile full logs --tail=50
