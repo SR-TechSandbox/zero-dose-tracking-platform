@@ -117,6 +117,84 @@ services:
       retries: 5
     restart: unless-stopped
 
+  campaign-service:
+    build:
+      context: .
+      dockerfile: services/campaign-service/Dockerfile
+    container_name: zd-campaign-service
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${CAMPAIGN_DB_USER}:${CAMPAIGN_DB_PASSWORD}@zd-postgres:5432/${CAMPAIGN_DB_NAME}
+      JWKS_URL: ${JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER}
+    networks:
+      - app-net
+      - data-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  tracking-service:
+    build:
+      context: .
+      dockerfile: services/tracking-service/Dockerfile
+    container_name: zd-tracking-service
+    profiles: ["full"]
+    environment:
+      DATABASE_URL: postgresql+psycopg://${TRACKING_DB_USER}:${TRACKING_DB_PASSWORD}@zd-postgres:5432/${TRACKING_DB_NAME}
+      JWKS_URL: ${JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER}
+    networks:
+      - app-net
+      - data-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+      keycloak:
+        condition: service_healthy
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8002/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  analytics-service:
+    build:
+      context: .
+      dockerfile: services/analytics-service/Dockerfile
+    container_name: zd-analytics-service
+    profiles: ["full"]
+    environment:
+      CAMPAIGN_SERVICE_URL: http://campaign-service:8001
+      TRACKING_SERVICE_URL: http://tracking-service:8002
+      JWKS_URL: ${JWKS_URL}
+      JWT_ISSUER: ${JWT_ISSUER}
+    networks:
+      - app-net
+    depends_on:
+      campaign-service:
+        condition: service_healthy
+      tracking-service:
+        condition: service_healthy
+    mem_limit: 192m
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8003/healthz')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
 networks:
   edge-net:
     driver: bridge
