@@ -1,28 +1,26 @@
 # SESSION STATE
 
 **Repository:** `SR-TechSandbox/zero-dose-tracking-platform`  
-**Current Phase:** Phase 2 — Backend Decomposition (Ready to Start)  
-**Active Branch:** `main` (cut `feat/phase-2-backend-services` next)  
+**Current Phase:** Phase 3 — Frontend SPA & Keycloak PKCE Integration  
+**Active Branch:** `feat/phase-3-frontend-spa`  
 **Last Updated:** 2026-11-21
 
 ## Completed
 - [x] **Phase 0:** Repo setup, `ARCHITECTURE_LOCK.md`, `SESSION_STATE.md`, `BRIEF.md`, `CODEOWNERS`
-- [x] **Phase 1: Core Infrastructure**
-  - PostgreSQL 18 with isolated databases (`campaign_db`, `tracking_db`, `keycloak_db`) and least-privilege roles (`infra/postgres/init-databases.sh`)
-  - Keycloak 26.0 auto-imported `zero-dose-realm`, `admin` & `field_worker` roles, `zd-frontend` (PKCE) & `zd-cli-test` clients
-  - Kong OSS 3.8 (DB-less) declarative routing, CORS, and local rate-limiting (`100 req/min`)
-  - Nginx 1.27 Edge LB with TLS termination, `/healthz`, and reverse proxying to Kong & Keycloak
-  - Docker Compose profiles (`core`, `auth`, `full`) with strict RAM caps & `Makefile`
-  - Verified green via GitHub Actions CI (`.github/workflows/verify-phase1.yml`)
-  - Repo hygiene verified via `git ls-files` (no secrets or local certs tracked)
+- [x] **Phase 1: Core Infrastructure** (Postgres 18, Keycloak 26.0, Kong OSS 3.8 DB-less, Nginx 1.27 TLS, CI green)
+- [x] **Phase 2: Backend Decomposition**
+  - `services/shared/` (Keycloak JWKS caching & RBAC middleware + unit tests)
+  - `services/campaign-service/` (FastAPI + SQLAlchemy + Alembic + pytest)
+  - `services/tracking-service/` (FastAPI + SQLAlchemy + Alembic + pytest)
+  - `services/analytics-service/` (Stateless FastAPI + Pandas + pytest)
+  - Full 7-container stack & E2E RBAC flow verified green via `.github/workflows/verify-phase2.yml`
 
-## Pending (Phase 2 Build Queue)
-- [ ] `docs/specs/PHASE_2_SPEC.md`
-- [ ] `services/shared/` (Keycloak JWKS caching & RBAC FastAPI middleware)
-- [ ] `services/campaign-service/` (FastAPI + SQLAlchemy + Alembic + pytest)
-- [ ] `services/tracking-service/` (FastAPI + SQLAlchemy + Alembic + pytest)
-- [ ] `services/analytics-service/` (FastAPI + Pandas + pytest)
-- [ ] Wire all 3 services into `docker-compose.yml` (`full` profile) + Phase 2 CI workflow
+## Pending (Phase 3 Build Queue)
+- [ ] `docs/specs/PHASE_3_SPEC.md`
+- [ ] `frontend/` (React + Vite + TypeScript + `keycloak-js` PKCE)
+- [ ] Multi-stage `frontend/Dockerfile` (Node build → `nginx:1.27-alpine`, `64m` RAM cap)
+- [ ] Wire `frontend` into `docker-compose.yml` & `infra/nginx/nginx.conf` (replace Phase 1 placeholder)
+- [ ] `.github/workflows/verify-phase3.yml` (TypeScript/Vite build + full 8-container E2E smoke test)
 
 ## Known Constraints / Notes
 - Local dev environment uses Windows Git Bash without Docker installed; **GitHub Actions CI** is the primary runtime/verification runner ($0 on public repo).
