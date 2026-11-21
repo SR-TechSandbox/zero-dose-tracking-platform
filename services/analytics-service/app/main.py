@@ -37,7 +37,7 @@ async def _fetch_json(url: str, authorization: str) -> Any:
 
 @app.get("/api/v1/analytics/summary")
 async def analytics_summary(
-    authorization: str = Header(...),
+    authorization: str = Header(default=""),
     _: UserContext = Depends(require_roles("admin", "field_worker")),
 ):
     campaigns = await _fetch_json(
@@ -73,7 +73,7 @@ async def analytics_summary(
 
 @app.get("/api/v1/metrics/coverage")
 async def district_coverage_metrics(
-    authorization: str = Header(...),
+    authorization: str = Header(default=""),
     _: UserContext = Depends(require_roles("admin")),
 ):
     campaigns = await _fetch_json(
@@ -134,7 +134,7 @@ async def district_coverage_metrics(
 
 @app.get("/api/v1/analytics/transitions")
 async def round_transitions(
-    authorization: str = Header(...),
+    authorization: str = Header(default=""),
     _: UserContext = Depends(require_roles("admin", "field_worker")),
 ):
     rounds = await _fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/rounds", authorization)
@@ -147,7 +147,7 @@ async def round_transitions(
 @app.get("/api/v1/analytics/children/{child_id}/timeline")
 async def child_timeline(
     child_id: str,
-    authorization: str = Header(...),
+    authorization: str = Header(default=""),
     _: UserContext = Depends(require_roles("admin", "field_worker")),
 ):
     rounds = await _fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/rounds", authorization)
