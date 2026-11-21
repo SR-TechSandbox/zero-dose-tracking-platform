@@ -1,27 +1,19 @@
 # SESSION STATE
 
 **Repository:** `SR-TechSandbox/zero-dose-tracking-platform`  
-**Current Phase:** Phase 3 — Frontend SPA & Keycloak PKCE Integration  
-**Active Branch:** `feature/phase-3-frontend-spa`  
+**Current Phase:** v1.0.0 Complete (Phases 0–3 Verified Green)  
+**Active Branch:** `main`  
 **Last Updated:** 2026-11-21
 
 ## Completed
 - [x] **Phase 0:** Repo setup, `ARCHITECTURE_LOCK.md`, `SESSION_STATE.md`, `BRIEF.md`, `CODEOWNERS`
 - [x] **Phase 1: Core Infrastructure** (Postgres 18, Keycloak 26.0, Kong OSS 3.8 DB-less, Nginx 1.27 TLS, CI green)
-- [x] **Phase 2: Backend Decomposition**
-  - `services/shared/` (Keycloak JWKS caching & RBAC middleware + unit tests)
-  - `services/campaign-service/` (FastAPI + SQLAlchemy + Alembic + pytest)
-  - `services/tracking-service/` (FastAPI + SQLAlchemy + Alembic + pytest)
-  - `services/analytics-service/` (Stateless FastAPI + Pandas + pytest)
-  - Full 7-container stack & E2E RBAC flow verified green via `.github/workflows/verify-phase2.yml`
+- [x] **Phase 2: Backend Decomposition** (`services/shared`, `campaign-service`, `tracking-service`, `analytics-service`, Alembic migrations, unit tests + 7-container E2E RBAC flow verified green)
+- [x] **Phase 3: Frontend SPA & Keycloak PKCE**
+  - React + Vite + TypeScript SPA with `keycloak-js` (`S256` PKCE) and role-aware Dashboard, Campaigns, and Field Tracking views
+  - Multi-stage Docker build (`node:22-alpine` → `nginx:1.27-alpine`, `64m` RAM cap)
+  - Full 8-container stack & HTTPS edge SPA serving verified green via `.github/workflows/verify-phase3.yml`
 
-## Pending (Phase 3 Build Queue)
-- [ ] `docs/specs/PHASE_3_SPEC.md`
-- [ ] `frontend/` (React + Vite + TypeScript + `keycloak-js` PKCE)
-- [ ] Multi-stage `frontend/Dockerfile` (Node build → `nginx:1.27-alpine`, `64m` RAM cap)
-- [ ] Wire `frontend` into `docker-compose.yml` & `infra/nginx/nginx.conf` (replace Phase 1 placeholder)
-- [ ] `.github/workflows/verify-phase3.yml` (TypeScript/Vite build + full 8-container E2E smoke test)
-
-## Known Constraints / Notes
-- Local dev environment uses Windows Git Bash without Docker installed; **GitHub Actions CI** is the primary runtime/verification runner ($0 on public repo).
-- `MSYS_NO_PATHCONV=1` is required in `infra/nginx/generate-certs.sh` for Git Bash compatibility.
+## Optional Next Steps (Phase 4)
+- [ ] Observability & Hardening (structured JSON logging, Prometheus metrics, security headers)
+- [ ] Production-ready `README.md` (architecture diagram, local/Codespaces quickstart, RBAC demo credentials)
