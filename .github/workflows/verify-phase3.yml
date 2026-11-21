@@ -81,41 +81,47 @@ jobs:
 
           echo "Checking /api/v1/analytics/transitions..."
           curl -skf -H "Authorization: Bearer $ADMIN_TOKEN" \
-            "https://localhost/api/v1/analytics/transitions" | python3 -c '
-          import sys, json
-          data = json.load(sys.stdin)
-          assert data["total_children"] == 60, f"Expected 60 children, got {data[\"total_children\"]}"
-          assert data["total_encounters"] == 130, f"Expected 130 encounters, got {data[\"total_encounters\"]}"
-          assert data["rounds"] == ["R1", "R2", "R3"], f"Unexpected rounds: {data[\"rounds\"]}"
+            "https://localhost/api/v1/analytics/transitions" > /tmp/transitions.json
+          python3 - <<'EOF'
+          import json
+          with open("/tmp/transitions.json") as f:
+              data = json.load(f)
+          assert data["total_children"] == 60, f"Expected 60 children, got {data['total_children']}"
+          assert data["total_encounters"] == 130, f"Expected 130 encounters, got {data['total_encounters']}"
+          assert data["rounds"] == ["R1", "R2", "R3"], f"Unexpected rounds: {data['rounds']}"
           r1_r2 = data["transitions"][0]
           ids = {c["child_id"] for c in r1_r2["transitioned_children"]}
           assert "C016" in ids, "C016 (external vaccination) should transition in R1->R2"
           assert "C043" not in ids, "C043 (intra-round correction) must not transition in R1->R2"
           assert "C027" not in ids, "C027 (intra-round duplicate) must not transition in R1->R2"
           print("Live transitions check passed:", r1_r2["from_round"], "->", r1_r2["to_round"], "count=", r1_r2["transitioned_count"])
-          '
+          EOF
 
           echo "Checking /api/v1/analytics/children/C043/timeline..."
           curl -skf -H "Authorization: Bearer $ADMIN_TOKEN" \
-            "https://localhost/api/v1/analytics/children/C043/timeline" | python3 -c '
-          import sys, json
-          tl = json.load(sys.stdin)
+            "https://localhost/api/v1/analytics/children/C043/timeline" > /tmp/c043.json
+          python3 - <<'EOF'
+          import json
+          with open("/tmp/c043.json") as f:
+              tl = json.load(f)
           assert tl["round_states"]["R1"]["zero_dose"] is True
           assert tl["round_states"]["R2"]["zero_dose"] is True
           r2_ids = [e["event_id"] for e in tl["audit_trail"] if e["round_id"] == "R2"]
           assert r2_ids == ["E0070", "E0094"], f"Unexpected R2 audit trail: {r2_ids}"
           print("Live C043 correction timeline check passed.")
-          '
+          EOF
 
           echo "Checking /api/v1/analytics/children/C016/timeline..."
           curl -skf -H "Authorization: Bearer $ADMIN_TOKEN" \
-            "https://localhost/api/v1/analytics/children/C016/timeline" | python3 -c '
-          import sys, json
-          tl = json.load(sys.stdin)
+            "https://localhost/api/v1/analytics/children/C016/timeline" > /tmp/c016.json
+          python3 - <<'EOF'
+          import json
+          with open("/tmp/c016.json") as f:
+              tl = json.load(f)
           assert tl["round_states"]["R2"]["zero_dose"] is False
           assert tl["round_states"]["R2"]["confirmation_method"] == "External (Vaccinated Elsewhere)"
           print("Live C016 external vaccination check passed.")
-          '
+          EOF
 
       - name: Dump Logs on Failure
         if: failure()
