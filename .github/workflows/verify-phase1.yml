@@ -1,0 +1,35 @@
+name: Verify Phase 1 Infrastructure
+
+on:
+  push:
+    branches: ["main", "feat/*"]
+  workflow_dispatch:
+
+jobs:
+  verify-phase1:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure scripts are executable
+        run: |
+          chmod +x infra/postgres/init-databases.sh
+          chmod +x infra/nginx/generate-certs.sh
+
+      - name: Boot Phase 1 Auth Stack
+        run: make up-auth
+
+      - name: Wait for Keycloak & Services to be Healthy
+        run: |
+          echo "Waiting 45s for Keycloak realm import..."
+          sleep 45
+          docker compose --profile auth ps
+          make stats
+
+      - name: Run Phase 1 Verification Gate
+        run: make verify-phase1
+
+      - name: Dump Logs on Failure
+        if: failure()
+        run: docker compose --profile auth logs --tail=50
