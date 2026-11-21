@@ -1,0 +1,76 @@
+name: Verify Phase 3 Full Stack (SPA + Microservices)
+
+on:
+  push:
+    branches: ["main", "feat/*"]
+    paths-ignore: ["docs/**", "*.md"]
+  workflow_dispatch:
+
+jobs:
+  frontend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Typecheck & build React SPA
+        working-directory: frontend
+        run: |
+          npm install
+          npm run build
+
+  e2e-full-stack-phase3:
+    needs: frontend-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Prepare env & TLS certs
+        run: |
+          cp .env.example .env
+          chmod +x infra/postgres/init-databases.sh infra/nginx/generate-certs.sh
+          ./infra/nginx/generate-certs.sh
+
+      - name: Boot full 8-container stack
+        run: docker compose --profile full up -d --build
+
+      - name: Wait for Keycloak & Services to be Ready
+        run: |
+          for i in $(seq 1 30); do
+            CODE=$(curl -sk -o /dev/null -w "%{http_code}" https://localhost/auth/realms/zero-dose-realm/protocol/openid-connect/certs || true)
+            if [ "$CODE" -eq 200 ]; then
+              echo "Keycloak is ready (attempt $i)."
+              break
+            fi
+            sleep 3
+          done
+          docker compose --profile full ps
+          docker stats --no-stream
+
+      - name: Verify SPA served via Nginx Edge LB
+        run: |
+          set -e
+          HTML=$(curl -sk -f https://localhost/)
+          echo "$HTML" | grep -q '<div id="root"></div>'
+          echo "React SPA index.html served cleanly over HTTPS."
+
+      - name: Verify API Gateway & Auth Regression
+        run: |
+          set -e
+          CODE=$(curl -sk -o /dev/null -w "%{http_code}" https://localhost/api/v1/campaigns)
+          test "$CODE" -eq 401
+
+          ADMIN_TOKEN=$(curl -sk -X POST https://localhost/auth/realms/zero-dose-realm/protocol/openid-connect/token \
+            -d "client_id=zd-cli-test" -d "username=admin.user" -d "password=AdminPass123!" -d "grant_type=password" \
+            | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
+
+          curl -sk -f https://localhost/api/v1/analytics/summary \
+            -H "Authorization: Bearer $ADMIN_TOKEN" | grep -q "total_campaigns"
+          echo "Phase 3 E2E verification passed."
+
+      - name: Dump Logs on Failure
+        if: failure()
+        run: docker compose --profile full logs --tail=50
