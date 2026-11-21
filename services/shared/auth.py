@@ -9,9 +9,13 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jwt.algorithms import RSAAlgorithm
 from pydantic import BaseModel
 
+# JWKS_URL = os.getenv(
+#     "JWKS_URL",
+#     "http://zd-keycloak:8080/realms/zero-dose-realm/protocol/openid-connect/certs",
+# )
 JWKS_URL = os.getenv(
     "JWKS_URL",
-    "http://zd-keycloak:8080/realms/zero-dose-realm/protocol/openid-connect/certs",
+    "http://zd-keycloak:8080/auth/realms/zero-dose-realm/protocol/openid-connect/certs",
 )
 JWT_ISSUER = os.getenv(
     "JWT_ISSUER",
