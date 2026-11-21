@@ -1,4 +1,5 @@
 from datetime import datetime
+from datetime import date  # add to existing datetime import
 from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,3 +28,11 @@ class CampaignOut(BaseModel):
     status: str
     created_by: str
     created_at: datetime
+
+class RoundOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    round_id: str
+    name: str
+    start_date: date
+    end_date: date

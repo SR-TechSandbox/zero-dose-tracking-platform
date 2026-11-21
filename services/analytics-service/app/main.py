@@ -3,35 +3,20 @@ from typing import Any
 
 import httpx
 import pandas as pd
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 
 from services.shared.auth import UserContext, require_roles
 
-CAMPAIGN_SERVICE_URL = os.getenv("CAMPAIGN_SERVICE_URL", "http://campaign-service:8001")
-TRACKING_SERVICE_URL = os.getenv("TRACKING_SERVICE_URL", "http://tracking-service:8002")
+from .replay import compute_round_transitions, replay_child_timeline
+
+CAMPAIGN_SERVICE_URL = os.getenv(
+    "CAMPAIGN_SERVICE_URL", "http://campaign-service:8001"
+)
+TRACKING_SERVICE_URL = os.getenv(
+    "TRACKING_SERVICE_URL", "http://tracking-service:8002"
+)
 
 app = FastAPI(title="Zero-Dose Analytics Service", version="1.0.0")
-
-
-def _fetch_json(url: str, token: str) -> list[dict[str, Any]]:
-    try:
-        resp = httpx.get(
-            url,
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=5.0,
-        )
-        resp.raise_for_status()
-        return resp.json()
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Upstream error from {url}: {exc.response.status_code}",
-        ) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Unable to reach upstream service {url}: {exc}",
-        ) from exc
 
 
 @app.get("/healthz")
@@ -39,88 +24,140 @@ def healthz():
     return {"status": "ok", "service": "analytics-service"}
 
 
+async def _fetch_json(url: str, authorization: str) -> Any:
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        resp = await client.get(url, headers={"Authorization": authorization})
+        if resp.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Upstream error from {url}: {resp.status_code}",
+            )
+        return resp.json()
+
+
 @app.get("/api/v1/analytics/summary")
-def analytics_summary(
-    user: UserContext = Depends(require_roles("admin", "field_worker")),
+async def analytics_summary(
+    authorization: str = Header(...),
+    _: UserContext = Depends(require_roles("admin", "field_worker")),
 ):
-    campaigns = _fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/campaigns", user.raw_token)
-    beneficiaries = _fetch_json(
-        f"{TRACKING_SERVICE_URL}/api/v1/beneficiaries", user.raw_token
+    campaigns = await _fetch_json(
+        f"{CAMPAIGN_SERVICE_URL}/api/v1/campaigns", authorization
     )
-    vaccinations = _fetch_json(
-        f"{TRACKING_SERVICE_URL}/api/v1/vaccinations", user.raw_token
+    beneficiaries = await _fetch_json(
+        f"{TRACKING_SERVICE_URL}/api/v1/beneficiaries", authorization
+    )
+    vaccinations = await _fetch_json(
+        f"{TRACKING_SERVICE_URL}/api/v1/vaccinations", authorization
     )
 
+    total_campaigns = len(campaigns)
     total_target = sum(c.get("target_beneficiaries", 0) for c in campaigns)
-    vaccinated_ids = {v["beneficiary_id"] for v in vaccinations}
+    total_beneficiaries = len(beneficiaries)
+    total_vaccinations = len(vaccinations)
+    unique_vaccinated = len({v["beneficiary_id"] for v in vaccinations})
     coverage_pct = (
-        round((len(vaccinated_ids) / total_target) * 100, 2) if total_target > 0 else 0.0
+        round((unique_vaccinated / total_beneficiaries) * 100, 2)
+        if total_beneficiaries > 0
+        else 0.0
     )
 
     return {
-        "total_campaigns": len(campaigns),
+        "total_campaigns": total_campaigns,
         "total_target_beneficiaries": total_target,
-        "total_beneficiaries": len(beneficiaries),
-        "total_vaccinations": len(vaccinations),
-        "unique_vaccinated_beneficiaries": len(vaccinated_ids),
+        "total_beneficiaries": total_beneficiaries,
+        "total_vaccinations": total_vaccinations,
+        "unique_vaccinated_beneficiaries": unique_vaccinated,
         "coverage_percentage": coverage_pct,
     }
 
 
 @app.get("/api/v1/metrics/coverage")
-def district_coverage_metrics(
-    user: UserContext = Depends(require_roles("admin")),
+async def district_coverage_metrics(
+    authorization: str = Header(...),
+    _: UserContext = Depends(require_roles("admin")),
 ):
-    campaigns = _fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/campaigns", user.raw_token)
-    beneficiaries = _fetch_json(
-        f"{TRACKING_SERVICE_URL}/api/v1/beneficiaries", user.raw_token
+    campaigns = await _fetch_json(
+        f"{CAMPAIGN_SERVICE_URL}/api/v1/campaigns", authorization
     )
-    vaccinations = _fetch_json(
-        f"{TRACKING_SERVICE_URL}/api/v1/vaccinations", user.raw_token
+    beneficiaries = await _fetch_json(
+        f"{TRACKING_SERVICE_URL}/api/v1/beneficiaries", authorization
+    )
+    vaccinations = await _fetch_json(
+        f"{TRACKING_SERVICE_URL}/api/v1/vaccinations", authorization
     )
 
-    if not campaigns:
+    if not campaigns and not beneficiaries:
         return {"districts": []}
 
-    camp_df = pd.DataFrame(campaigns)
-    targets_by_district = (
-        camp_df.groupby("district", as_index=False)["target_beneficiaries"].sum()
+    camp_df = (
+        pd.DataFrame(campaigns)
+        if campaigns
+        else pd.DataFrame(columns=["district", "target_beneficiaries"])
+    )
+    ben_df = (
+        pd.DataFrame(beneficiaries)
+        if beneficiaries
+        else pd.DataFrame(columns=["id", "district"])
+    )
+    vax_ids = {v["beneficiary_id"] for v in vaccinations}
+
+    districts = sorted(
+        set(camp_df["district"].dropna().tolist())
+        | set(ben_df["district"].dropna().tolist())
     )
 
-    if beneficiaries:
-        ben_df = pd.DataFrame(beneficiaries)
-        reg_by_district = (
-            ben_df.groupby("district", as_index=False)["id"]
-            .count()
-            .rename(columns={"id": "registered_beneficiaries"})
+    result = []
+    for district in districts:
+        target = (
+            int(camp_df[camp_df["district"] == district]["target_beneficiaries"].sum())
+            if not camp_df.empty
+            else 0
         )
-        vaccinated_ids = {v["beneficiary_id"] for v in vaccinations}
-        ben_df["is_vaccinated"] = ben_df["id"].isin(vaccinated_ids)
-        vax_by_district = (
-            ben_df.groupby("district", as_index=False)["is_vaccinated"]
-            .sum()
-            .rename(columns={"is_vaccinated": "vaccinated_beneficiaries"})
+        d_bens = ben_df[ben_df["district"] == district] if not ben_df.empty else ben_df
+        registered = len(d_bens)
+        vaccinated = (
+            int(d_bens["id"].isin(vax_ids).sum()) if not d_bens.empty else 0
         )
-    else:
-        reg_by_district = pd.DataFrame(columns=["district", "registered_beneficiaries"])
-        vax_by_district = pd.DataFrame(columns=["district", "vaccinated_beneficiaries"])
+        coverage = round((vaccinated / registered) * 100, 2) if registered > 0 else 0.0
+        result.append(
+            {
+                "district": district,
+                "target_beneficiaries": target,
+                "registered_beneficiaries": registered,
+                "vaccinated_beneficiaries": vaccinated,
+                "coverage_percentage": coverage,
+            }
+        )
 
-    merged = targets_by_district.merge(reg_by_district, on="district", how="left").merge(
-        vax_by_district, on="district", how="left"
-    )
-    merged["registered_beneficiaries"] = (
-        merged["registered_beneficiaries"].fillna(0).astype(int)
-    )
-    merged["vaccinated_beneficiaries"] = (
-        merged["vaccinated_beneficiaries"].fillna(0).astype(int)
-    )
-    merged["coverage_percentage"] = merged.apply(
-        lambda r: round(
-            (r["vaccinated_beneficiaries"] / r["target_beneficiaries"]) * 100, 2
-        )
-        if r["target_beneficiaries"] > 0
-        else 0.0,
-        axis=1,
-    )
+    return {"districts": result}
 
-    return {"districts": merged.to_dict(orient="records")}
+
+@app.get("/api/v1/analytics/transitions")
+async def round_transitions(
+    authorization: str = Header(...),
+    _: UserContext = Depends(require_roles("admin", "field_worker")),
+):
+    rounds = await _fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/rounds", authorization)
+    encounters = await _fetch_json(
+        f"{TRACKING_SERVICE_URL}/api/v1/encounters", authorization
+    )
+    return compute_round_transitions(rounds, encounters)
+
+
+@app.get("/api/v1/analytics/children/{child_id}/timeline")
+async def child_timeline(
+    child_id: str,
+    authorization: str = Header(...),
+    _: UserContext = Depends(require_roles("admin", "field_worker")),
+):
+    rounds = await _fetch_json(f"{CAMPAIGN_SERVICE_URL}/api/v1/rounds", authorization)
+    encounters = await _fetch_json(
+        f"{TRACKING_SERVICE_URL}/api/v1/encounters?child_id={child_id}",
+        authorization,
+    )
+    if not encounters:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No encounters found for child {child_id}",
+        )
+    return replay_child_timeline(child_id, rounds, encounters)

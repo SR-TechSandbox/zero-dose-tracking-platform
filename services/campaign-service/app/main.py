@@ -5,8 +5,8 @@ from sqlalchemy.orm import Session
 from services.shared.auth import UserContext, require_roles
 
 from .database import get_db
-from .models import Campaign
-from .schemas import CampaignCreate, CampaignOut, CampaignUpdate
+from .models import Campaign, Round
+from .schemas import CampaignCreate, CampaignOut, CampaignUpdate, RoundOut
 
 app = FastAPI(title="Zero-Dose Campaign Service", version="1.0.0")
 
@@ -81,3 +81,11 @@ def update_campaign(
     db.commit()
     db.refresh(campaign)
     return campaign
+
+
+@app.get("/api/v1/rounds", response_model=list[RoundOut])
+def list_rounds(
+    db: Session = Depends(get_db),
+    _: UserContext = Depends(require_roles("admin", "field_worker")),
+):
+    return db.query(Round).order_by(Round.start_date.asc()).all()
