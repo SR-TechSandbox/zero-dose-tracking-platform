@@ -39,16 +39,22 @@ jobs:
 
       - name: Wait for Keycloak & Services to be Ready
         run: |
-          for i in $(seq 1 30); do
+          READY=0
+          for i in $(seq 1 50); do
             CODE=$(curl -sk -o /dev/null -w "%{http_code}" https://localhost/auth/realms/zero-dose-realm/protocol/openid-connect/certs || true)
             if [ "$CODE" -eq 200 ]; then
               echo "Keycloak is ready (attempt $i)."
+              READY=1
               break
             fi
             sleep 3
           done
           docker compose --profile full ps
           docker stats --no-stream
+          if [ "$READY" -ne 1 ]; then
+            echo "ERROR: Keycloak did not become ready within 150s (last HTTP code: $CODE)"
+            exit 1
+          fi
 
       - name: Verify SPA served via Nginx Edge LB
         run: |
