@@ -3,6 +3,7 @@ name: Verify Phase 2 Microservices
 on:
   push:
     branches: ["main", "feat/*"]
+    paths-ignore: ["docs/**", "*.md"]
   workflow_dispatch:
 
 jobs:
@@ -44,10 +45,18 @@ jobs:
       - name: Boot full 7-container stack
         run: docker compose --profile full up -d --build
 
-      - name: Wait for services & check RAM usage
+      - name: Wait for Keycloak & Services to be Ready
         run: |
-          echo "Waiting 45s for Keycloak + Alembic migrations + FastAPI services..."
-          sleep 45
+          echo "Waiting for Keycloak realm to be ready..."
+          for i in $(seq 1 30); do
+            CODE=$(curl -sk -o /dev/null -w "%{http_code}" https://localhost/auth/realms/zero-dose-realm/protocol/openid-connect/certs || true)
+            if [ "$CODE" -eq 200 ]; then
+              echo "Keycloak is ready (attempt $i)."
+              break
+            fi
+            echo "Attempt $i/30: HTTP $CODE — waiting 3s..."
+            sleep 3
+          done
           docker compose --profile full ps
           docker stats --no-stream
 
