@@ -46,19 +46,19 @@ jobs:
         run: docker compose --profile full up -d --build
 
       - name: Wait for Keycloak & Services to be Ready
-              run: |
-                echo "Waiting for Keycloak realm to be ready..."
-                for i in $(seq 1 30); do
-                  CODE=$(curl -sk -o /dev/null -w "%{http_code}" https://localhost/auth/realms/zero-dose-realm/protocol/openid-connect/certs || true)
-                  if [ "$CODE" -eq 200 ]; then
-                    echo "Keycloak is ready (attempt $i)."
-                    break
-                  fi
-                  echo "Attempt $i/30: HTTP $CODE — waiting 3s..."
-                  sleep 3
-                done
-                docker compose --profile full ps
-                docker stats --no-stream
+        run: |
+          echo "Waiting for Keycloak realm to be ready..."
+          for i in $(seq 1 30); do
+            CODE=$(curl -sk -o /dev/null -w "%{http_code}" https://localhost/auth/realms/zero-dose-realm/protocol/openid-connect/certs || true)
+            if [ "$CODE" -eq 200 ]; then
+              echo "Keycloak is ready (attempt $i)."
+              break
+            fi
+            echo "Attempt $i/30: HTTP $CODE — waiting 3s..."
+            sleep 3
+          done
+          docker compose --profile full ps
+          docker stats --no-stream
 
       - name: Run Phase 2 E2E RBAC & Functional Flow
         run: |
