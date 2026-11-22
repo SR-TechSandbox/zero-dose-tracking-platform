@@ -155,4 +155,31 @@ export const api = {
     }),
 
   listBeneficiaries: () => apiFetch<Beneficiary[]>("/api/v1/beneficiaries"),
-  createBenef
+  createBeneficiary: (payload: {
+    campaign_id: string;
+    full_name: string;
+    age_months: number;
+    district: string;
+  }) =>
+    apiFetch<Beneficiary>("/api/v1/beneficiaries", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  listVaccinations: () => apiFetch<Vaccination[]>("/api/v1/vaccinations"),
+  logVaccination: (payload: {
+    beneficiary_id: string;
+    vaccine_name: string;
+    dose_number: number;
+  }) =>
+    apiFetch<Vaccination>("/api/v1/vaccinations", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+
+  logEncounter: (payload: EncounterCreate) =>
+    apiFetch<Encounter>("/api/v1/encounters", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    }),
+};
