@@ -48,8 +48,8 @@ Imported automatically at startup via `start-dev --import-realm` backed by `keyc
   1. `zd-frontend` (Public client, Standard Flow / PKCE enabled, Redirect URIs: `https://localhost/*`, `http://localhost:5173/*`).
   2. `zd-cli-test` (Public client, Direct Access Grants enabled — **dev/CI testing only** so `curl` and GitHub Actions can mint JWTs cleanly without a browser).
 - **Seeded Dev Users:**
-  - `admin.user` / `AdminPass123!` -> role: `admin`
-  - `worker.user` / `WorkerPass123!` -> role: `field_worker`
+  - `admin` / `AdminPass123!` -> role: `admin`
+  - `worker` / `WorkerPass123!` -> role: `field_worker`
 - **JVM Cap:** `JAVA_OPTS_APPEND="-Xms256m -Xmx512m"`.
 - **Healthcheck:** HTTP check on port `9000` (`/health/ready`).
 
@@ -79,6 +79,6 @@ Imported automatically at startup via `start-dev --import-realm` backed by `keyc
 1. **Stack Boot:** `make up-auth` brings up `zd-postgres`, `zd-keycloak`, `zd-kong`, and `zd-nginx` all in `healthy` state with total RAM < 1.35 GB (`docker stats --no-stream`).
 2. **DB Isolation:** `psql` confirms `campaign_db`, `tracking_db`, and `keycloak_db` exist and `campaign_user` cannot connect to `tracking_db`.
 3. **JWT Minting & JWKS:**
-   - `curl` against Keycloak token endpoint with `admin.user` returns a valid JWT containing `"roles": ["admin"]`.
+   - `curl` against Keycloak token endpoint with `admin` returns a valid JWT containing `"roles": ["admin"]`.
    - `curl` against Keycloak `/certs` endpoint returns the public JWKS JSON.
 4. **Edge -> Gateway Flow:** `curl -k https://localhost/healthz` returns `200 OK`, and hitting `https://localhost/api/v1/campaigns` reaches Kong (returning expected upstream `503` / `502` with Kong rate-limit headers `X-RateLimit-Limit-Minute: 100` until Phase 2 services are added).

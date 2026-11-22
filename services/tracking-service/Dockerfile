@@ -10,6 +10,7 @@ COPY services/tracking-service/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY data/baseline/encounters.jsonl ./data/baseline/encounters.jsonl
+COPY data/baseline/children.csv ./data/baseline/children.csv
 COPY services/shared ./services/shared
 COPY services/tracking-service ./services/tracking-service
 

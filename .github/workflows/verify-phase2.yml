@@ -70,11 +70,11 @@ jobs:
 
           echo "2. Mint Admin & Field Worker JWTs..."
           ADMIN_TOKEN=$(curl -sk -X POST https://localhost/auth/realms/zero-dose-realm/protocol/openid-connect/token \
-            -d "client_id=zd-cli-test" -d "username=admin.user" -d "password=AdminPass123!" -d "grant_type=password" \
+            -d "client_id=zd-cli-test" -d "username=admin" -d "password=AdminPass123!" -d "grant_type=password" \
             | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
 
           WORKER_TOKEN=$(curl -sk -X POST https://localhost/auth/realms/zero-dose-realm/protocol/openid-connect/token \
-            -d "client_id=zd-cli-test" -d "username=worker.user" -d "password=WorkerPass123!" -d "grant_type=password" \
+            -d "client_id=zd-cli-test" -d "username=worker" -d "password=WorkerPass123!" -d "grant_type=password" \
             | python3 -c "import sys, json; print(json.load(sys.stdin)['access_token'])")
 
           echo "3. Field worker creating campaign must return 403..."
