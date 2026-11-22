@@ -102,6 +102,15 @@ def replay_child_timeline(
         "audit_trail": audit_trail,
     }
 
+import re
+
+def _natural_child_key(child_id: str) -> tuple[str, int, str]:
+    match = re.fullmatch(r"([A-Za-z_-]*?)(\d+)", child_id.strip())
+    if match:
+        prefix, num = match.groups()
+        return (prefix.lower(), int(num), child_id)
+    return (child_id.lower(), 10**9, child_id)
+
 
 def compute_round_transitions(
     rounds: list[dict[str, Any]],
@@ -114,13 +123,14 @@ def compute_round_transitions(
       2. Effective end-of-round status in Round B was Vaccinated (False)
     """
     ordered_rounds = sorted(rounds, key=lambda r: r["start_date"])
-    child_ids = sorted({e["child_id"] for e in encounters})
+    child_ids = sorted({e["child_id"] for e in encounters}, key=_natural_child_key)
 
     timelines = {
         cid: replay_child_timeline(cid, ordered_rounds, encounters)
         for cid in child_ids
     }
 
+    transitioned_children.sort(key=lambda ch: _natural_child_key(ch["child_id"]))
     transitions: list[dict[str, Any]] = []
     for idx in range(len(ordered_rounds) - 1):
         r_from = ordered_rounds[idx]["round_id"]

@@ -195,6 +195,7 @@ export default function App() {
         event_id: eventId,
         child_id: encChildId,
         round_id: encRoundId,
+        device_id: "web-field-ui",
         recorded_at: new Date().toISOString(),
         type: "revisit",
         ...outcomeFields,
