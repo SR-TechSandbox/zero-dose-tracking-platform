@@ -1,0 +1,17 @@
+services:
+  zd-kong:
+    environment:
+      KONG_TRUSTED_IPS: "0.0.0.0/0,::/0"
+      KONG_REAL_IP_HEADER: "X-Forwarded-For"
+      KONG_REAL_IP_RECURSIVE: "on"
+
+  zd-keycloak:
+    mem_limit: 1g
+    environment:
+      KC_HOSTNAME_STRICT: "false"
+      KC_PROXY_HEADERS: "xforwarded"
+
+  zd-nginx:
+    volumes:
+      - ./infra/nginx/nginx.demo.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/nginx/certs:/etc/nginx/certs:ro
