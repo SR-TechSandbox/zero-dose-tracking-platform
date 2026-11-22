@@ -102,8 +102,8 @@ The Keycloak realm (`zero-dose-realm`) is auto-imported on startup with two pre-
 
 | Username | Password | Role | Permissions |
 | :--- | :--- | :--- | :--- |
-| `admin.user` | `AdminPass123!` | `admin` | Full access: create/update campaigns, view district coverage metrics, view round transitions & child timelines, register beneficiaries, log vaccinations & encounters |
-| `worker.user` | `WorkerPass123!` | `field_worker` | Field access: view campaigns, rounds, summary KPIs & transitions, register beneficiaries, log vaccinations & encounters (blocked `403` on campaign creation & admin district metrics) |
+| `admin` | `AdminPass123!` | `admin` | Full access: create/update campaigns, view district coverage metrics, view round transitions & child timelines, register beneficiaries, log vaccinations & encounters |
+| `worker` | `WorkerPass123!` | `field_worker` | Field access: view campaigns, rounds, summary KPIs & transitions, register beneficiaries, log vaccinations & encounters (blocked `403` on campaign creation & admin district metrics) |
 
 ---
 

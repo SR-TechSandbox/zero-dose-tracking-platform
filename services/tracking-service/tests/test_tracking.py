@@ -36,7 +36,7 @@ def setup_db():
     Base.metadata.create_all(bind=engine)
     app.dependency_overrides[get_db] = override_get_db
     app.dependency_overrides[get_current_user] = lambda: UserContext(
-        sub="w-1", username="worker.user", roles=["field_worker"], raw_token="fake"
+        sub="w-1", username="worker", roles=["field_worker"], raw_token="fake"
     )
     yield
     app.dependency_overrides.clear()

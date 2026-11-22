@@ -1,4 +1,4 @@
-.PHONY: init up-core up-auth up-full down clean stats verify-phase1
+.PHONY: init up-core up-auth up-full down clean stats seed reset-demo verify-phase1
 
 init:
 	@if [ ! -f .env ]; then cp .env.example .env && echo "Created .env from .env.example"; fi
@@ -22,6 +22,14 @@ clean:
 stats:
 	docker stats --no-stream
 
+seed:
+	docker exec zd-campaign-service python -m app.seed
+	docker exec zd-tracking-service python -m app.seed
+
+reset-demo:
+	docker exec zd-postgres sh -c 'psql -U "$${POSTGRES_USER:-postgres}" -d campaign_db -c "TRUNCATE TABLE campaigns, rounds RESTART IDENTITY CASCADE;" && psql -U "$${POSTGRES_USER:-postgres}" -d tracking_db -c "TRUNCATE TABLE beneficiaries, vaccinations, encounters RESTART IDENTITY CASCADE;"'
+	$(MAKE) seed
+
 verify-phase1:
 	@echo "1. Checking Nginx Edge LB (/healthz)..."
 	@curl -sk https://localhost/healthz
@@ -33,6 +41,6 @@ verify-phase1:
 	@curl -sk -X POST https://localhost/auth/realms/zero-dose-realm/protocol/openid-connect/token \
 		-H "Content-Type: application/x-www-form-urlencoded" \
 		-d "client_id=zd-cli-test" \
-		-d "username=admin.user" \
+		-d "username=admin" \
 		-d "password=AdminPass123!" \
 		-d "grant_type=password" | grep -q "access_token" && echo "JWT minted successfully!"

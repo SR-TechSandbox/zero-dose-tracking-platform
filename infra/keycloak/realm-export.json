@@ -56,7 +56,7 @@
   ],
   "users": [
     {
-      "username": "admin.user",
+      "username": "admin",
       "email": "admin@zerodose.local",
       "firstName": "Campaign",
       "lastName": "Admin",
@@ -74,7 +74,7 @@
       ]
     },
     {
-      "username": "worker.user",
+      "username": "worker",
       "email": "worker@zerodose.local",
       "firstName": "Field",
       "lastName": "Worker",
