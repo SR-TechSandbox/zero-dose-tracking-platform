@@ -374,3 +374,400 @@ export default function App() {
                 <div className="kpi-label">Total Field Encounters</div>
                 <div className="kpi-value">
                   {transitions?.total_encounters ?? 0}
+                </div>
+              </div>
+            </div>
+
+            <div className="card">
+              <h3>Round-to-Round Zero-Dose Progression</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Transition</th>
+                    <th>Zero-Dose Reached</th>
+                    <th>Remaining Zero-Dose</th>
+                    <th>Children Reached (Click to Inspect)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transitions?.transitions.map((tr) => (
+                    <tr key={`${tr.from_round}-${tr.to_round}`}>
+                      <td>
+                        <strong>
+                          {tr.from_round} → {tr.to_round}
+                        </strong>
+                      </td>
+                      <td>{tr.transitioned_count}</td>
+                      <td>{tr.remaining_zero_dose_count}</td>
+                      <td>
+                        <div className="form-row">
+                          {tr.transitioned_children.map((ch) => (
+                            <button
+                              key={ch.child_id}
+                              type="button"
+                              className="tab"
+                              onClick={() => void inspectChild(ch.child_id)}
+                            >
+                              {ch.child_id}
+                              {ch.confirmation_method ===
+                              "External (Vaccinated Elsewhere)"
+                                ? " (External)"
+                                : ""}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="card">
+              <h3>Child Multi-Round Timeline Inspector</h3>
+              <div className="form-row" style={{ marginBottom: "1rem" }}>
+                <select
+                  value={selectedChildId}
+                  onChange={(e) => void inspectChild(e.target.value)}
+                >
+                  <option value="">Select a child to inspect timeline...</option>
+                  {beneficiaries.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.id} — {b.full_name} ({b.district})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {timelineLoading && <p>Loading child timeline...</p>}
+
+              {timeline && !timelineLoading && (
+                <>
+                  <p>
+                    <strong>Child:</strong> {timeline.child_id}
+                    {beneficiaryMap.get(timeline.child_id)
+                      ? ` (${beneficiaryMap.get(timeline.child_id)?.full_name}, ${
+                          beneficiaryMap.get(timeline.child_id)?.district
+                        })`
+                      : ""}{" "}
+                    | <strong>Current Status:</strong>{" "}
+                    {formatZeroDoseStatus(timeline.current_zero_dose)}
+                    {timeline.confirmation_method
+                      ? ` — ${timeline.confirmation_method}`
+                      : ""}
+                  </p>
+
+                  <h4>Status by Round</h4>
+                  <table style={{ marginBottom: "1rem" }}>
+                    <thead>
+                      <tr>
+                        <th>Round</th>
+                        <th>End-of-Round Status</th>
+                        <th>Confirmation Method</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.values(timeline.round_states).map((rs) => (
+                        <tr key={rs.round_id}>
+                          <td>{rs.round_id}</td>
+                          <td>{formatZeroDoseStatus(rs.zero_dose)}</td>
+                          <td>{rs.confirmation_method ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <h4>Encounter Audit Trail ({timeline.audit_trail.length})</h4>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Round</th>
+                        <th>Recorded At</th>
+                        <th>Type</th>
+                        <th>Status After</th>
+                        <th>Confirmation</th>
+                        <th>Comment</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {timeline.audit_trail.map((ev) => (
+                        <tr key={ev.event_id}>
+                          <td>{ev.round_id}</td>
+                          <td>{new Date(ev.recorded_at).toLocaleString()}</td>
+                          <td>{ev.type}</td>
+                          <td>{formatZeroDoseStatus(ev.zero_dose_after)}</td>
+                          <td>{ev.confirmation_method ?? "—"}</td>
+                          <td>{ev.comment ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </div>
+          </>
+        )}
+
+        {tab === "campaigns" && (
+          <>
+            {isAdmin && (
+              <div className="card">
+                <h3>Create Campaign (Admin Only)</h3>
+                <form className="form-row" onSubmit={handleCreateCampaign}>
+                  <input
+                    placeholder="Campaign name"
+                    value={campName}
+                    onChange={(e) => setCampName(e.target.value)}
+                    required
+                  />
+                  <input
+                    placeholder="District"
+                    value={campDistrict}
+                    onChange={(e) => setCampDistrict(e.target.value)}
+                    required
+                  />
+                  <input
+                    type="number"
+                    min={0}
+                    placeholder="Target"
+                    value={campTarget}
+                    onChange={(e) => setCampTarget(e.target.value)}
+                    required
+                  />
+                  <button type="submit">Create</button>
+                </form>
+              </div>
+            )}
+
+            <div className="card">
+              <h3>All Campaigns</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>District</th>
+                    <th>Target</th>
+                    <th>Status</th>
+                    <th>Created By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {campaigns.map((c) => (
+                    <tr key={c.id}>
+                      <td>{c.name}</td>
+                      <td>{c.district}</td>
+                      <td>{c.target_beneficiaries}</td>
+                      <td>{c.status}</td>
+                      <td>{c.created_by}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+
+        {tab === "tracking" && (
+          <>
+            <div className="card">
+              <h3>Log Field Encounter (Multi-Round Visit)</h3>
+              <form className="form-row" onSubmit={handleLogEncounter}>
+                <select
+                  value={encChildId}
+                  onChange={(e) => setEncChildId(e.target.value)}
+                  required
+                >
+                  <option value="">Select child...</option>
+                  {beneficiaries.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.id} — {b.full_name} ({b.district})
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={encRoundId}
+                  onChange={(e) => setEncRoundId(e.target.value)}
+                  required
+                >
+                  <option value="">Select round...</option>
+                  {rounds.map((r) => (
+                    <option key={r.round_id} value={r.round_id}>
+                      {r.round_id} ({r.name})
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={encOutcome}
+                  onChange={(e) =>
+                    setEncOutcome(e.target.value as EncounterOutcome)
+                  }
+                  required
+                >
+                  <option value="campaign_vax">Vaccinated (Campaign)</option>
+                  <option value="external_vax">
+                    Vaccinated Elsewhere (External)
+                  </option>
+                  <option value="still_zero_dose">
+                    Not Vaccinated (Still Zero-Dose / Correction)
+                  </option>
+                  <option value="not_home">
+                    Child Unavailable / Not Home (No Status Change)
+                  </option>
+                </select>
+
+                <input
+                  placeholder="Field note (optional)"
+                  value={encComment}
+                  onChange={(e) => setEncComment(e.target.value)}
+                />
+
+                <button type="submit">Log Encounter</button>
+              </form>
+              {encSuccess && (
+                <p style={{ color: "#15803d", marginTop: "0.75rem" }}>
+                  {encSuccess}
+                </p>
+              )}
+            </div>
+
+            <div className="card">
+              <h3>Register Zero-Dose Beneficiary</h3>
+              <form className="form-row" onSubmit={handleCreateBeneficiary}>
+                <select
+                  value={benCampaignId}
+                  onChange={(e) => setBenCampaignId(e.target.value)}
+                  required
+                >
+                  <option value="">Select campaign...</option>
+                  {campaigns.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} ({c.district})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  placeholder="Full name"
+                  value={benName}
+                  onChange={(e) => setBenName(e.target.value)}
+                  required
+                />
+                <input
+                  type="number"
+                  min={0}
+                  max={240}
+                  placeholder="Age (months)"
+                  value={benAge}
+                  onChange={(e) => setBenAge(e.target.value)}
+                  required
+                />
+                <input
+                  placeholder="District"
+                  value={benDistrict}
+                  onChange={(e) => setBenDistrict(e.target.value)}
+                  required
+                />
+                <button type="submit">Register</button>
+              </form>
+            </div>
+
+            <div className="card">
+              <h3>Log Vaccination Dose</h3>
+              <form className="form-row" onSubmit={handleLogVaccination}>
+                <select
+                  value={vaxBenId}
+                  onChange={(e) => {
+                    const benId = e.target.value;
+                    setVaxBenId(benId);
+                    const currentMax = vaccinations
+                      .filter(
+                        (v) =>
+                          v.beneficiary_id === benId &&
+                          v.vaccine_name === vaxName
+                      )
+                      .reduce((max, v) => Math.max(max, v.dose_number), 0);
+                    setVaxDose(String(Math.min(currentMax + 1, 3)));
+                  }}
+                  required
+                >
+                  <option value="">Select beneficiary...</option>
+                  {beneficiaries.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.full_name} ({b.district})
+                    </option>
+                  ))}
+                </select>
+                <input
+                  placeholder="Vaccine (e.g. DTP1)"
+                  value={vaxName}
+                  onChange={(e) => {
+                    const nextVax = e.target.value;
+                    setVaxName(nextVax);
+                    const currentMax = vaccinations
+                      .filter(
+                        (v) =>
+                          v.beneficiary_id === vaxBenId &&
+                          v.vaccine_name === nextVax
+                      )
+                      .reduce((max, v) => Math.max(max, v.dose_number), 0);
+                    setVaxDose(String(Math.min(currentMax + 1, 3)));
+                  }}
+                  required
+                />
+                <select
+                  value={vaxDose}
+                  onChange={(e) => setVaxDose(e.target.value)}
+                  disabled={isSeriesComplete}
+                  required
+                >
+                  {[1, 2, 3].map((d) => (
+                    <option
+                      key={d}
+                      value={String(d)}
+                      disabled={Boolean(vaxBenId) && d !== nextDose}
+                    >
+                      Dose {d}{" "}
+                      {Boolean(vaxBenId) && d <= maxCompletedDose
+                        ? "(Completed)"
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+                <button type="submit" disabled={isSeriesComplete}>
+                  {isSeriesComplete
+                    ? "All 3 Doses Complete"
+                    : `Log Dose ${nextDose}`}
+                </button>
+              </form>
+            </div>
+
+            <div className="card">
+              <h3>Recent Vaccinations ({vaccinations.length})</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Beneficiary ID</th>
+                    <th>Vaccine</th>
+                    <th>Dose</th>
+                    <th>Administered By</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {vaccinations.map((v) => (
+                    <tr key={v.id}>
+                      <td>{v.beneficiary_id.slice(0, 8)}...</td>
+                      <td>{v.vaccine_name}</td>
+                      <td>{v.dose_number}</td>
+                      <td>{v.administered_by}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </main>
+    </>
+  );
+}
