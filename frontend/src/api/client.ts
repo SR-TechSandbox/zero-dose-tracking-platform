@@ -102,6 +102,7 @@ export interface EncounterCreate {
   event_id: string;
   child_id: string;
   round_id: string;
+  device_id: string;
   recorded_at: string;
   type: "enumeration" | "revisit";
   zero_dose_answer?: boolean | null;
