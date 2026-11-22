@@ -4,12 +4,21 @@ import {
   api,
   Beneficiary,
   Campaign,
+  ChildTimeline,
   DistrictMetric,
+  Round,
+  TransitionsResponse,
   Vaccination,
 } from "./api/client";
 import { getUsername, hasRole, keycloak } from "./auth/keycloak";
 
-type Tab = "dashboard" | "campaigns" | "tracking";
+type Tab = "dashboard" | "transitions" | "campaigns" | "tracking";
+
+function formatZeroDoseStatus(val: boolean | null): string {
+  if (val === true) return "Zero-Dose";
+  if (val === false) return "Vaccinated";
+  return "Unknown";
+}
 
 export default function App() {
   const isAdmin = hasRole("admin");
@@ -22,8 +31,15 @@ export default function App() {
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [metrics, setMetrics] = useState<DistrictMetric[]>([]);
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
+  const [rounds, setRounds] = useState<Round[]>([]);
+  const [transitions, setTransitions] = useState<TransitionsResponse | null>(null);
   const [beneficiaries, setBeneficiaries] = useState<Beneficiary[]>([]);
   const [vaccinations, setVaccinations] = useState<Vaccination[]>([]);
+
+  // Child timeline inspector state
+  const [selectedChildId, setSelectedChildId] = useState("");
+  const [timeline, setTimeline] = useState<ChildTimeline | null>(null);
+  const [timelineLoading, setTimelineLoading] = useState(false);
 
   // Form states
   const [campName, setCampName] = useState("");
@@ -42,16 +58,20 @@ export default function App() {
   async function refreshAll() {
     try {
       setError(null);
-      const [s, c, b, v] = await Promise.all([
+      const [s, c, b, v, r, t] = await Promise.all([
         api.getSummary(),
         api.listCampaigns(),
         api.listBeneficiaries(),
         api.listVaccinations(),
+        api.listRounds(),
+        api.getTransitions(),
       ]);
       setSummary(s);
       setCampaigns(c);
       setBeneficiaries(b);
       setVaccinations(v);
+      setRounds(r);
+      setTransitions(t);
 
       if (isAdmin) {
         const m = await api.getDistrictMetrics();
@@ -65,6 +85,25 @@ export default function App() {
   useEffect(() => {
     void refreshAll();
   }, []);
+
+  async function inspectChild(childId: string) {
+    setSelectedChildId(childId);
+    if (!childId) {
+      setTimeline(null);
+      return;
+    }
+    try {
+      setError(null);
+      setTimelineLoading(true);
+      const tl = await api.getChildTimeline(childId);
+      setTimeline(tl);
+    } catch (err) {
+      setTimeline(null);
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTimelineLoading(false);
+    }
+  }
 
   async function handleCreateCampaign(e: FormEvent) {
     e.preventDefault();
@@ -116,6 +155,8 @@ export default function App() {
     }
   }
 
+  const beneficiaryMap = new Map(beneficiaries.map((b) => [b.id, b]));
+
   return (
     <>
       <header className="topbar">
@@ -139,6 +180,12 @@ export default function App() {
             onClick={() => setTab("dashboard")}
           >
             Dashboard
+          </button>
+          <button
+            className={`tab ${tab === "transitions" ? "active" : ""}`}
+            onClick={() => setTab("transitions")}
+          >
+            Round Transitions ({rounds.length})
           </button>
           <button
             className={`tab ${tab === "campaigns" ? "active" : ""}`}
@@ -179,6 +226,34 @@ export default function App() {
               </div>
             </div>
 
+            {transitions && transitions.transitions.length > 0 && (
+              <div className="card">
+                <h3>Zero-Dose Children Reached Between Rounds</h3>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Transition</th>
+                      <th>Zero-Dose Reached</th>
+                      <th>Remaining Zero-Dose</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {transitions.transitions.map((tr) => (
+                      <tr key={`${tr.from_round}-${tr.to_round}`}>
+                        <td>
+                          <strong>
+                            {tr.from_round} → {tr.to_round}
+                          </strong>
+                        </td>
+                        <td>{tr.transitioned_count}</td>
+                        <td>{tr.remaining_zero_dose_count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             {isAdmin && (
               <div className="card">
                 <h3>District Coverage Breakdown (Admin Only)</h3>
@@ -206,6 +281,155 @@ export default function App() {
                 </table>
               </div>
             )}
+          </>
+        )}
+
+        {tab === "transitions" && (
+          <>
+            <div className="grid">
+              <div className="card">
+                <div className="kpi-label">Rounds Tracked</div>
+                <div className="kpi-value">
+                  {transitions?.rounds.join(" → ") || "—"}
+                </div>
+              </div>
+              <div className="card">
+                <div className="kpi-label">Children with Encounters</div>
+                <div className="kpi-value">{transitions?.total_children ?? 0}</div>
+              </div>
+              <div className="card">
+                <div className="kpi-label">Total Field Encounters</div>
+                <div className="kpi-value">{transitions?.total_encounters ?? 0}</div>
+              </div>
+            </div>
+
+            <div className="card">
+              <h3>Round-to-Round Zero-Dose Progression</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Transition</th>
+                    <th>Zero-Dose Reached</th>
+                    <th>Remaining Zero-Dose</th>
+                    <th>Children Reached (Click to Inspect)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {transitions?.transitions.map((tr) => (
+                    <tr key={`${tr.from_round}-${tr.to_round}`}>
+                      <td>
+                        <strong>
+                          {tr.from_round} → {tr.to_round}
+                        </strong>
+                      </td>
+                      <td>{tr.transitioned_count}</td>
+                      <td>{tr.remaining_zero_dose_count}</td>
+                      <td>
+                        <div className="form-row">
+                          {tr.transitioned_children.map((ch) => (
+                            <button
+                              key={ch.child_id}
+                              type="button"
+                              className="tab"
+                              onClick={() => void inspectChild(ch.child_id)}
+                            >
+                              {ch.child_id}
+                              {ch.confirmation_method ===
+                              "External (Vaccinated Elsewhere)"
+                                ? " (External)"
+                                : ""}
+                            </button>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="card">
+              <h3>Child Multi-Round Timeline Inspector</h3>
+              <div className="form-row" style={{ marginBottom: "1rem" }}>
+                <select
+                  value={selectedChildId}
+                  onChange={(e) => void inspectChild(e.target.value)}
+                >
+                  <option value="">Select a child to inspect timeline...</option>
+                  {beneficiaries.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.id} — {b.full_name} ({b.district})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {timelineLoading && <p>Loading child timeline...</p>}
+
+              {timeline && !timelineLoading && (
+                <>
+                  <p>
+                    <strong>Child:</strong> {timeline.child_id}
+                    {beneficiaryMap.get(timeline.child_id)
+                      ? ` (${beneficiaryMap.get(timeline.child_id)?.full_name}, ${
+                          beneficiaryMap.get(timeline.child_id)?.district
+                        })`
+                      : ""}{" "}
+                    | <strong>Current Status:</strong>{" "}
+                    {formatZeroDoseStatus(timeline.current_zero_dose)}
+                    {timeline.confirmation_method
+                      ? ` — ${timeline.confirmation_method}`
+                      : ""}
+                  </p>
+
+                  <h4>Status by Round</h4>
+                  <table style={{ marginBottom: "1rem" }}>
+                    <thead>
+                      <tr>
+                        <th>Round</th>
+                        <th>End-of-Round Status</th>
+                        <th>Confirmation Method</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.values(timeline.round_states).map((rs) => (
+                        <tr key={rs.round_id}>
+                          <td>{rs.round_id}</td>
+                          <td>{formatZeroDoseStatus(rs.zero_dose)}</td>
+                          <td>{rs.confirmation_method ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+
+                  <h4>Encounter Audit Trail ({timeline.audit_trail.length})</h4>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Round</th>
+                        <th>Recorded At</th>
+                        <th>Type</th>
+                        <th>Status After</th>
+                        <th>Confirmation</th>
+                        <th>Comment</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {timeline.audit_trail.map((ev) => (
+                        <tr key={ev.event_id}>
+                          <td>{ev.round_id}</td>
+                          <td>{new Date(ev.recorded_at).toLocaleString()}</td>
+                          <td>{ev.type}</td>
+                          <td>{formatZeroDoseStatus(ev.zero_dose_after)}</td>
+                          <td>{ev.confirmation_method ?? "—"}</td>
+                          <td>{ev.comment ?? "—"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </>
+              )}
+            </div>
           </>
         )}
 
