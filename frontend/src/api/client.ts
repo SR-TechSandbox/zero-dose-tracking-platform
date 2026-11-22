@@ -10,6 +10,13 @@ export interface Campaign {
   created_at: string;
 }
 
+export interface Round {
+  round_id: string;
+  name: string;
+  start_date: string;
+  end_date: string;
+}
+
 export interface Beneficiary {
   id: string;
   campaign_id: string;
@@ -46,6 +53,51 @@ export interface DistrictMetric {
   coverage_percentage: number;
 }
 
+export interface TransitionedChild {
+  child_id: string;
+  confirmation_method: string | null;
+}
+
+export interface RoundTransition {
+  from_round: string;
+  to_round: string;
+  transitioned_count: number;
+  remaining_zero_dose_count: number;
+  transitioned_children: TransitionedChild[];
+}
+
+export interface TransitionsResponse {
+  total_children: number;
+  total_encounters: number;
+  rounds: string[];
+  transitions: RoundTransition[];
+}
+
+export interface RoundState {
+  round_id: string;
+  zero_dose: boolean | null;
+  confirmation_method: string | null;
+}
+
+export interface AuditTrailEntry {
+  event_id: string;
+  round_id: string;
+  recorded_at: string;
+  type: string;
+  zero_dose_after: boolean | null;
+  confirmation_method: string | null;
+  state_changed: boolean;
+  comment: string | null;
+}
+
+export interface ChildTimeline {
+  child_id: string;
+  current_zero_dose: boolean | null;
+  confirmation_method: string | null;
+  round_states: Record<string, RoundState>;
+  audit_trail: AuditTrailEntry[];
+}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getFreshToken();
   const res = await fetch(path, {
@@ -68,7 +120,12 @@ export const api = {
   getSummary: () => apiFetch<AnalyticsSummary>("/api/v1/analytics/summary"),
   getDistrictMetrics: () =>
     apiFetch<{ districts: DistrictMetric[] }>("/api/v1/metrics/coverage"),
+  getTransitions: () =>
+    apiFetch<TransitionsResponse>("/api/v1/analytics/transitions"),
+  getChildTimeline: (childId: string) =>
+    apiFetch<ChildTimeline>(`/api/v1/analytics/children/${encodeURIComponent(childId)}/timeline`),
 
+  listRounds: () => apiFetch<Round[]>("/api/v1/rounds"),
   listCampaigns: () => apiFetch<Campaign[]>("/api/v1/campaigns"),
   createCampaign: (payload: {
     name: string;
