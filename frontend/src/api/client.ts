@@ -98,6 +98,20 @@ export interface ChildTimeline {
   audit_trail: AuditTrailEntry[];
 }
 
+export interface EncounterCreate {
+  event_id: string;
+  child_id: string;
+  round_id: string;
+  recorded_at: string;
+  type: "enumeration" | "revisit";
+  zero_dose_answer?: boolean | null;
+  vaccinated_since_last?: "yes" | "no" | null;
+  vaccinated_elsewhere?: boolean | null;
+  comment?: string | null;
+}
+
+export interface Encounter extends EncounterCreate {}
+
 async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getFreshToken();
   const res = await fetch(path, {
@@ -123,7 +137,9 @@ export const api = {
   getTransitions: () =>
     apiFetch<TransitionsResponse>("/api/v1/analytics/transitions"),
   getChildTimeline: (childId: string) =>
-    apiFetch<ChildTimeline>(`/api/v1/analytics/children/${encodeURIComponent(childId)}/timeline`),
+    apiFetch<ChildTimeline>(
+      `/api/v1/analytics/children/${encodeURIComponent(childId)}/timeline`
+    ),
 
   listRounds: () => apiFetch<Round[]>("/api/v1/rounds"),
   listCampaigns: () => apiFetch<Campaign[]>("/api/v1/campaigns"),
@@ -139,25 +155,4 @@ export const api = {
     }),
 
   listBeneficiaries: () => apiFetch<Beneficiary[]>("/api/v1/beneficiaries"),
-  createBeneficiary: (payload: {
-    campaign_id: string;
-    full_name: string;
-    age_months: number;
-    district: string;
-  }) =>
-    apiFetch<Beneficiary>("/api/v1/beneficiaries", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-
-  listVaccinations: () => apiFetch<Vaccination[]>("/api/v1/vaccinations"),
-  logVaccination: (payload: {
-    beneficiary_id: string;
-    vaccine_name: string;
-    dose_number: number;
-  }) =>
-    apiFetch<Vaccination>("/api/v1/vaccinations", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
-};
+  createBenef
