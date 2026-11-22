@@ -12,12 +12,32 @@ def _parse_iso(ts: str) -> datetime:
     return datetime.fromisoformat(ts)
 
 
+def _safe_ts(val: Any) -> datetime:
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, str) and val.strip():
+        try:
+            return _parse_iso(val.strip())
+        except ValueError:
+            pass
+    return datetime.min
+
+
 def _natural_child_key(child_id: str) -> tuple[str, int, str]:
-    match = re.fullmatch(r"([A-Za-z_-]*?)(\d+)", child_id.strip())
+    match = re.fullmatch(r"([A-Za-z_-]*?)(\d+)", str(child_id).strip())
     if match:
         prefix, num = match.groups()
-        return (prefix.lower(), int(num), child_id)
-    return (child_id.lower(), 10**9, child_id)
+        return (prefix.lower(), int(num), str(child_id))
+    return (str(child_id).lower(), 10**9, str(child_id))
+
+
+def _normalize_round_id(item: Any) -> Optional[str]:
+    if isinstance(item, dict):
+        rid = item.get("round_id")
+        return str(rid) if rid else None
+    if isinstance(item, str) and item.strip():
+        return item.strip()
+    return None
 
 
 def _derive_confirmation_method(event: dict[str, Any]) -> Optional[str]:
@@ -60,17 +80,38 @@ def _derive_zero_dose_after(
 
 def replay_child_timeline(
     child_id: str,
-    encounters: list[dict[str, Any]],
-    ordered_rounds: list[str],
+    encounters_or_rounds: list[Any],
+    rounds_or_encounters: list[Any],
 ) -> dict[str, Any]:
-    child_events = [e for e in encounters if e.get("child_id") == child_id]
+    # Support both (child_id, encounters, ordered_rounds) and (child_id, rounds, encounters)
+    first_has_child = any(
+        isinstance(x, dict) and "child_id" in x for x in encounters_or_rounds
+    )
+    second_has_child = any(
+        isinstance(x, dict) and "child_id" in x for x in rounds_or_encounters
+    )
+
+    if second_has_child and not first_has_child:
+        raw_rounds = encounters_or_rounds
+        raw_encounters = rounds_or_encounters
+    else:
+        raw_encounters = encounters_or_rounds
+        raw_rounds = rounds_or_encounters
+
+    child_events = [
+        e
+        for e in raw_encounters
+        if isinstance(e, dict) and str(e.get("child_id", "")) == str(child_id)
+    ]
     child_events.sort(
-        key=lambda e: (_parse_iso(e["recorded_at"]), str(e.get("event_id", "")))
+        key=lambda e: (_safe_ts(e.get("recorded_at")), str(e.get("event_id", "")))
     )
 
     events_by_round: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for ev in child_events:
-        events_by_round[ev["round_id"]].append(ev)
+        r_str = _normalize_round_id(ev.get("round_id"))
+        if r_str:
+            events_by_round[r_str].append(ev)
 
     current_zero_dose: Optional[bool] = None
     current_confirmation: Optional[str] = None
@@ -78,15 +119,16 @@ def replay_child_timeline(
 
     all_round_ids: list[str] = []
     seen_rounds: set[str] = set()
-    for r in ordered_rounds:
-        if r not in seen_rounds:
-            seen_rounds.add(r)
-            all_round_ids.append(r)
+    for r in raw_rounds:
+        r_str = _normalize_round_id(r)
+        if r_str and r_str not in seen_rounds:
+            seen_rounds.add(r_str)
+            all_round_ids.append(r_str)
     for ev in child_events:
-        r = ev["round_id"]
-        if r not in seen_rounds:
-            seen_rounds.add(r)
-            all_round_ids.append(r)
+        r_str = _normalize_round_id(ev.get("round_id"))
+        if r_str and r_str not in seen_rounds:
+            seen_rounds.add(r_str)
+            all_round_ids.append(r_str)
 
     round_states: dict[str, dict[str, Any]] = {}
 
@@ -106,12 +148,15 @@ def replay_child_timeline(
                 current_confirmation = None
                 round_confirmation = None
 
+            rec_at = ev.get("recorded_at")
             audit_trail.append(
                 {
-                    "event_id": ev["event_id"],
+                    "event_id": str(ev.get("event_id", "")),
                     "round_id": r_id,
-                    "recorded_at": ev["recorded_at"],
-                    "type": ev["type"],
+                    "recorded_at": rec_at.isoformat()
+                    if isinstance(rec_at, datetime)
+                    else str(rec_at or ""),
+                    "type": str(ev.get("type") or "revisit"),
                     "zero_dose_after": current_zero_dose,
                     "confirmation_method": round_confirmation
                     if current_zero_dose is False
@@ -141,26 +186,45 @@ def replay_child_timeline(
 
 
 def compute_round_transitions(
-    rounds_meta: list[dict[str, Any]],
-    encounters: list[dict[str, Any]],
+    rounds_meta: list[Any],
+    encounters: list[Any],
 ) -> dict[str, Any]:
-    valid_encounters = [
-        e for e in encounters if isinstance(e, dict) and "child_id" in e
-    ]
-    valid_rounds = [
-        r for r in rounds_meta if isinstance(r, dict) and "round_id" in r
-    ]
+    first_has_child = any(
+        isinstance(x, dict) and "child_id" in x for x in rounds_meta
+    )
+    second_has_child = any(
+        isinstance(x, dict) and "child_id" in x for x in encounters
+    )
+    if first_has_child and not second_has_child:
+        valid_encounters = [
+            e for e in rounds_meta if isinstance(e, dict) and "child_id" in e
+        ]
+        valid_rounds = [
+            r for r in encounters if isinstance(r, dict) and _normalize_round_id(r)
+        ]
+    else:
+        valid_encounters = [
+            e for e in encounters if isinstance(e, dict) and "child_id" in e
+        ]
+        valid_rounds = [
+            r for r in rounds_meta if isinstance(r, dict) and _normalize_round_id(r)
+        ]
 
-    ordered_rounds = [r["round_id"] for r in valid_rounds]
-    seen = set(ordered_rounds)
+    ordered_rounds: list[str] = []
+    seen: set[str] = set()
+    for r in valid_rounds:
+        r_str = _normalize_round_id(r)
+        if r_str and r_str not in seen:
+            seen.add(r_str)
+            ordered_rounds.append(r_str)
     for ev in valid_encounters:
-        r = ev.get("round_id")
-        if r and r not in seen:
-            seen.add(r)
-            ordered_rounds.append(r)
+        r_str = _normalize_round_id(ev.get("round_id"))
+        if r_str and r_str not in seen:
+            seen.add(r_str)
+            ordered_rounds.append(r_str)
 
     child_ids = sorted(
-        {e["child_id"] for e in valid_encounters}, key=_natural_child_key
+        {str(e["child_id"]) for e in valid_encounters}, key=_natural_child_key
     )
     timelines = [
         replay_child_timeline(cid, valid_encounters, ordered_rounds)
