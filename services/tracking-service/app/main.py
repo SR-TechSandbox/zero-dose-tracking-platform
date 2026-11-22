@@ -89,3 +89,77 @@ def log_vaccination(
     beneficiary = (
         db.query(Beneficiary).filter(Beneficiary.id == payload.beneficiary_id).first()
     )
+    if not beneficiary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Beneficiary not found"
+        )
+
+    max_dose = (
+        db.query(func.max(Vaccination.dose_number))
+        .filter(
+            Vaccination.beneficiary_id == payload.beneficiary_id,
+            Vaccination.vaccine_name == payload.vaccine_name,
+        )
+        .scalar()
+        or 0
+    )
+
+    if max_dose >= 3:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"All 3 doses of {payload.vaccine_name} are already completed for this beneficiary.",
+        )
+
+    expected_dose = max_dose + 1
+    if payload.dose_number != expected_dose:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Invalid dose sequence: expected Dose {expected_dose} next (got Dose {payload.dose_number}).",
+        )
+
+    vaccination = Vaccination(
+        beneficiary_id=payload.beneficiary_id,
+        vaccine_name=payload.vaccine_name,
+        dose_number=payload.dose_number,
+        administered_by=user.username,
+    )
+    db.add(vaccination)
+    db.commit()
+    db.refresh(vaccination)
+    return vaccination
+
+
+@app.get("/api/v1/encounters", response_model=list[EncounterOut])
+def list_encounters(
+    child_id: Optional[str] = Query(None),
+    round_id: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _: UserContext = Depends(require_roles("admin", "field_worker")),
+):
+    query = db.query(Encounter)
+    if child_id:
+        query = query.filter(Encounter.child_id == child_id)
+    if round_id:
+        query = query.filter(Encounter.round_id == round_id)
+    return query.order_by(Encounter.recorded_at.asc()).all()
+
+
+@app.post(
+    "/api/v1/encounters",
+    response_model=EncounterOut,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_encounter(
+    payload: EncounterCreate,
+    db: Session = Depends(get_db),
+    _: UserContext = Depends(require_roles("admin", "field_worker")),
+):
+    if db.get(Encounter, payload.event_id):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail="Encounter already exists"
+        )
+    encounter = Encounter(**payload.model_dump())
+    db.add(encounter)
+    db.commit()
+    db.refresh(encounter)
+    return encounter
