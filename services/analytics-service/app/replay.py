@@ -1,108 +1,16 @@
+from __future__ import annotations
+
+import re
+from collections import defaultdict
 from datetime import datetime
 from typing import Any, Optional
 
 
-def _parse_ts(value: str | datetime) -> datetime:
-    if isinstance(value, datetime):
-        return value
-    return datetime.fromisoformat(value)
+def _parse_iso(ts: str) -> datetime:
+    if ts.endswith("Z"):
+        ts = ts[:-1] + "+00:00"
+    return datetime.fromisoformat(ts)
 
-
-def replay_child_timeline(
-    child_id: str,
-    rounds: list[dict[str, Any]],
-    encounters: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """
-    Deterministically replay all encounters for a single child in chronological order.
-
-    Rules enforced:
-    - 2.1 Intra-round corrections (e.g. C043): explicit "no" resets zero_dose=True;
-      all events remain preserved in the audit trail.
-    - 2.2 Intra-round duplicates (e.g. C027): last decisive event in the round wins.
-    - 2.3 Null revisits: preserve prior zero_dose state; no state change emitted.
-    - 2.4 External vaccination (e.g. C016): vaccinated_elsewhere=True sets
-      confirmation_method="External (Vaccinated Elsewhere)".
-    """
-    ordered_rounds = sorted(rounds, key=lambda r: r["start_date"])
-    child_events = sorted(
-        [e for e in encounters if e["child_id"] == child_id],
-        key=lambda e: (_parse_ts(e["recorded_at"]), e["event_id"]),
-    )
-
-    events_by_round: dict[str, list[dict[str, Any]]] = {}
-    for ev in child_events:
-        events_by_round.setdefault(ev["round_id"], []).append(ev)
-
-    current_zero_dose: Optional[bool] = None
-    confirmation_method: Optional[str] = None
-    round_states: dict[str, dict[str, Any]] = {}
-    audit_trail: list[dict[str, Any]] = []
-
-    for r in ordered_rounds:
-        rid = r["round_id"]
-        for ev in events_by_round.get(rid, []):
-            prev_state = current_zero_dose
-            ev_type = ev.get("type")
-            state_changed = False
-
-            if ev_type == "enumeration":
-                ans = ev.get("zero_dose_answer")
-                if ans is not None:
-                    current_zero_dose = bool(ans)
-                    confirmation_method = None if current_zero_dose else "Prior Vaccination"
-                    state_changed = current_zero_dose != prev_state
-
-            elif ev_type == "revisit":
-                vax = ev.get("vaccinated_since_last")
-                ext = ev.get("vaccinated_elsewhere")
-
-                if vax == "yes" or ext is True:
-                    current_zero_dose = False
-                    confirmation_method = (
-                        "External (Vaccinated Elsewhere)"
-                        if ext is True
-                        else "Campaign Vaccination"
-                    )
-                    state_changed = current_zero_dose != prev_state
-                elif vax == "no":
-                    # Explicit negative answer (including intra-round corrections)
-                    # resets status back to Zero-Dose (True).
-                    current_zero_dose = True
-                    confirmation_method = None
-                    state_changed = current_zero_dose != prev_state
-                else:
-                    # Rule 2.3: Null revisit preserves prior zero_dose flag.
-                    state_changed = False
-
-            audit_trail.append(
-                {
-                    "event_id": ev["event_id"],
-                    "round_id": rid,
-                    "recorded_at": ev["recorded_at"],
-                    "type": ev_type,
-                    "zero_dose_after": current_zero_dose,
-                    "confirmation_method": confirmation_method,
-                    "state_changed": state_changed,
-                    "comment": ev.get("comment"),
-                }
-            )
-
-        round_states[rid] = {
-            "round_id": rid,
-            "zero_dose": current_zero_dose,
-            "confirmation_method": confirmation_method,
-        }
-
-    return {
-        "child_id": child_id,
-        "current_zero_dose": current_zero_dose,
-        "confirmation_method": confirmation_method,
-        "round_states": round_states,
-        "audit_trail": audit_trail,
-    }
-
-import re
 
 def _natural_child_key(child_id: str) -> tuple[str, int, str]:
     match = re.fullmatch(r"([A-Za-z_-]*?)(\d+)", child_id.strip())
@@ -112,55 +20,176 @@ def _natural_child_key(child_id: str) -> tuple[str, int, str]:
     return (child_id.lower(), 10**9, child_id)
 
 
-def compute_round_transitions(
-    rounds: list[dict[str, Any]],
-    encounters: list[dict[str, Any]],
-) -> dict[str, Any]:
-    """
-    Compute round-to-round transitions across all children (Rule 2.5):
-    A child transitions from Round A -> Round B iff:
-      1. Effective end-of-round status in Round A was Zero-Dose (True)
-      2. Effective end-of-round status in Round B was Vaccinated (False)
-    """
-    ordered_rounds = sorted(rounds, key=lambda r: r["start_date"])
-    child_ids = sorted({e["child_id"] for e in encounters}, key=_natural_child_key)
+def _derive_confirmation_method(event: dict[str, Any]) -> Optional[str]:
+    if event.get("vaccinated_since_last") == "yes":
+        if event.get("vaccinated_elsewhere") is True:
+            return "External (Vaccinated Elsewhere)"
+        return "Campaign / Field Dose"
+    if event.get("type") == "enumeration" and event.get("zero_dose_answer") is False:
+        return "Enumeration (Already Vaccinated)"
+    return None
 
-    timelines = {
-        cid: replay_child_timeline(cid, ordered_rounds, encounters)
-        for cid in child_ids
+
+def _derive_zero_dose_after(
+    event: dict[str, Any], prev_zero_dose: Optional[bool]
+) -> tuple[Optional[bool], Optional[str]]:
+    """
+    Returns (new_zero_dose_state, confirmation_method_if_changed_or_confirmed).
+    Null/ambiguous revisits preserve prior state (never flip to zero-dose on missing data).
+    """
+    ev_type = event.get("type")
+
+    if ev_type == "enumeration":
+        ans = event.get("zero_dose_answer")
+        if ans is True:
+            return True, None
+        if ans is False:
+            return False, _derive_confirmation_method(event)
+        return prev_zero_dose, None
+
+    if ev_type == "revisit":
+        vsl = event.get("vaccinated_since_last")
+        if vsl == "yes":
+            return False, _derive_confirmation_method(event)
+        if vsl == "no":
+            return True, None
+        return prev_zero_dose, None
+
+    return prev_zero_dose, None
+
+
+def replay_child_timeline(
+    child_id: str,
+    encounters: list[dict[str, Any]],
+    ordered_rounds: list[str],
+) -> dict[str, Any]:
+    child_events = [e for e in encounters if e["child_id"] == child_id]
+    child_events.sort(
+        key=lambda e: (_parse_iso(e["recorded_at"]), str(e.get("event_id", "")))
+    )
+
+    events_by_round: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for ev in child_events:
+        events_by_round[ev["round_id"]].append(ev)
+
+    current_zero_dose: Optional[bool] = None
+    current_confirmation: Optional[str] = None
+    audit_trail: list[dict[str, Any]] = []
+
+    all_round_ids: list[str] = []
+    seen_rounds: set[str] = set()
+    for r in ordered_rounds:
+        if r not in seen_rounds:
+            seen_rounds.add(r)
+            all_round_ids.append(r)
+    for ev in child_events:
+        r = ev["round_id"]
+        if r not in seen_rounds:
+            seen_rounds.add(r)
+            all_round_ids.append(r)
+
+    round_states: dict[str, dict[str, Any]] = {}
+
+    for r_id in all_round_ids:
+        r_events = events_by_round.get(r_id, [])
+        round_confirmation: Optional[str] = None
+
+        for ev in r_events:
+            prev_state = current_zero_dose
+            next_state, conf = _derive_zero_dose_after(ev, prev_state)
+            state_changed = next_state != prev_state
+            current_zero_dose = next_state
+            if conf:
+                current_confirmation = conf
+                round_confirmation = conf
+            elif current_zero_dose is True:
+                current_confirmation = None
+                round_confirmation = None
+
+            audit_trail.append(
+                {
+                    "event_id": ev["event_id"],
+                    "round_id": r_id,
+                    "recorded_at": ev["recorded_at"],
+                    "type": ev["type"],
+                    "zero_dose_after": current_zero_dose,
+                    "confirmation_method": round_confirmation
+                    if current_zero_dose is False
+                    else None,
+                    "state_changed": state_changed,
+                    "comment": ev.get("comment"),
+                }
+            )
+
+        round_states[r_id] = {
+            "round_id": r_id,
+            "zero_dose": current_zero_dose,
+            "confirmation_method": round_confirmation
+            if current_zero_dose is False
+            else None,
+        }
+
+    return {
+        "child_id": child_id,
+        "current_zero_dose": current_zero_dose,
+        "confirmation_method": current_confirmation
+        if current_zero_dose is False
+        else None,
+        "round_states": round_states,
+        "audit_trail": audit_trail,
     }
 
-    transitioned_children.sort(key=lambda ch: _natural_child_key(ch["child_id"]))
+
+def compute_round_transitions(
+    encounters: list[dict[str, Any]],
+    rounds_meta: list[dict[str, Any]],
+) -> dict[str, Any]:
+    ordered_rounds = [r["round_id"] for r in rounds_meta]
+    seen = set(ordered_rounds)
+    for ev in encounters:
+        r = ev["round_id"]
+        if r not in seen:
+            seen.add(r)
+            ordered_rounds.append(r)
+
+    child_ids = sorted({e["child_id"] for e in encounters}, key=_natural_child_key)
+    timelines = [
+        replay_child_timeline(cid, encounters, ordered_rounds) for cid in child_ids
+    ]
+
     transitions: list[dict[str, Any]] = []
     for idx in range(len(ordered_rounds) - 1):
-        r_from = ordered_rounds[idx]["round_id"]
-        r_to = ordered_rounds[idx + 1]["round_id"]
+        r_from = ordered_rounds[idx]
+        r_to = ordered_rounds[idx + 1]
 
         transitioned_children: list[dict[str, Any]] = []
-        remaining_zero_dose: list[str] = []
+        remaining_zero_dose = 0
 
-        for cid, tl in timelines.items():
-            state_a = tl["round_states"][r_from]["zero_dose"]
-            state_b = tl["round_states"][r_to]["zero_dose"]
+        for tl in timelines:
+            st_from = tl["round_states"].get(r_from, {}).get("zero_dose")
+            st_to_obj = tl["round_states"].get(r_to, {})
+            st_to = st_to_obj.get("zero_dose")
 
-            if state_a is True and state_b is False:
+            if st_from is True and st_to is False:
                 transitioned_children.append(
                     {
-                        "child_id": cid,
-                        "confirmation_method": tl["round_states"][r_to][
-                            "confirmation_method"
-                        ],
+                        "child_id": tl["child_id"],
+                        "confirmation_method": st_to_obj.get("confirmation_method"),
                     }
                 )
-            elif state_a is True and state_b is True:
-                remaining_zero_dose.append(cid)
+            if st_to is True:
+                remaining_zero_dose += 1
+
+        transitioned_children.sort(
+            key=lambda ch: _natural_child_key(ch["child_id"])
+        )
 
         transitions.append(
             {
                 "from_round": r_from,
                 "to_round": r_to,
                 "transitioned_count": len(transitioned_children),
-                "remaining_zero_dose_count": len(remaining_zero_dose),
+                "remaining_zero_dose_count": remaining_zero_dose,
                 "transitioned_children": transitioned_children,
             }
         )
@@ -168,6 +197,6 @@ def compute_round_transitions(
     return {
         "total_children": len(child_ids),
         "total_encounters": len(encounters),
-        "rounds": [r["round_id"] for r in ordered_rounds],
+        "rounds": ordered_rounds,
         "transitions": transitions,
     }
