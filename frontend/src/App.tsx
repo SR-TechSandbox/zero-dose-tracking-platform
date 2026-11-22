@@ -25,6 +25,18 @@ function formatZeroDoseStatus(val: boolean | null): string {
   return "Unknown";
 }
 
+function compareChildIds(a: string, b: string): number {
+  const ma = a.trim().match(/^([A-Za-z_-]*?)(\d+)$/);
+  const mb = b.trim().match(/^([A-Za-z_-]*?)(\d+)$/);
+  if (ma && mb) {
+    const pCmp = ma[1].toLowerCase().localeCompare(mb[1].toLowerCase());
+    if (pCmp !== 0) return pCmp;
+    const nDiff = Number(ma[2]) - Number(mb[2]);
+    if (nDiff !== 0) return nDiff;
+  }
+  return a.localeCompare(b);
+}
+
 export default function App() {
   const isAdmin = hasRole("admin");
   const username = getUsername();
@@ -85,7 +97,7 @@ export default function App() {
       ]);
       setSummary(s);
       setCampaigns(c);
-      setBeneficiaries(b);
+      setBeneficiaries([...b].sort((x, y) => compareChildIds(x.id, y.id)));
       setVaccinations(v);
       setRounds(r);
       setTransitions(t);
