@@ -26,7 +26,7 @@ class BeneficiaryOut(BaseModel):
 class VaccinationCreate(BaseModel):
     beneficiary_id: str = Field(..., min_length=1, max_length=36)
     vaccine_name: str = Field(..., min_length=2, max_length=100)
-    dose_number: int = Field(1, ge=1, le=10)
+    dose_number: int = Field(..., ge=1, le=3)
 
 
 class VaccinationOut(BaseModel):
