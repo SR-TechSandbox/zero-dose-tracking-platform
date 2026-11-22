@@ -63,7 +63,7 @@ def replay_child_timeline(
     encounters: list[dict[str, Any]],
     ordered_rounds: list[str],
 ) -> dict[str, Any]:
-    child_events = [e for e in encounters if e["child_id"] == child_id]
+    child_events = [e for e in encounters if e.get("child_id") == child_id]
     child_events.sort(
         key=lambda e: (_parse_iso(e["recorded_at"]), str(e.get("event_id", "")))
     )
@@ -141,20 +141,30 @@ def replay_child_timeline(
 
 
 def compute_round_transitions(
-    encounters: list[dict[str, Any]],
     rounds_meta: list[dict[str, Any]],
+    encounters: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    ordered_rounds = [r["round_id"] for r in rounds_meta]
+    valid_encounters = [
+        e for e in encounters if isinstance(e, dict) and "child_id" in e
+    ]
+    valid_rounds = [
+        r for r in rounds_meta if isinstance(r, dict) and "round_id" in r
+    ]
+
+    ordered_rounds = [r["round_id"] for r in valid_rounds]
     seen = set(ordered_rounds)
-    for ev in encounters:
-        r = ev["round_id"]
-        if r not in seen:
+    for ev in valid_encounters:
+        r = ev.get("round_id")
+        if r and r not in seen:
             seen.add(r)
             ordered_rounds.append(r)
 
-    child_ids = sorted({e["child_id"] for e in encounters}, key=_natural_child_key)
+    child_ids = sorted(
+        {e["child_id"] for e in valid_encounters}, key=_natural_child_key
+    )
     timelines = [
-        replay_child_timeline(cid, encounters, ordered_rounds) for cid in child_ids
+        replay_child_timeline(cid, valid_encounters, ordered_rounds)
+        for cid in child_ids
     ]
 
     transitions: list[dict[str, Any]] = []
@@ -196,7 +206,7 @@ def compute_round_transitions(
 
     return {
         "total_children": len(child_ids),
-        "total_encounters": len(encounters),
+        "total_encounters": len(valid_encounters),
         "rounds": ordered_rounds,
         "transitions": transitions,
     }
